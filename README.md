@@ -10,7 +10,7 @@ Each project lives in its own folder with:
 
 | Project | What it does |
 |---|---|
-| _coming soon_ | |
+| [Christmas Fog Window](christmas-fog-window/) | Blow to fog a cozy Christmas window, wipe it with your hand, and decorate it with gesture-made stickers |
 
 ## Setup (once)
 
