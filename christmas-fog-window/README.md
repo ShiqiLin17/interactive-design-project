@@ -11,7 +11,7 @@ A cozy night window with you reflected in the glass. Blow on it to fog it up, wi
 |---|---|
 | 😮 **Open your mouth and blow** at the camera | The window fogs up, spreading out from your mouth |
 | ✋ **Open palm** (either hand) | Wipes the fog off wherever your hand moves |
-| 🤏 **Sticker hand:** thumb + **index** | 🎄 Christmas tree pops out |
+| 🤏 **Sticker hand:** thumb + **index** (each fingertip shows a mini preview of its sticker) | 🎄 Christmas tree pops out |
 | thumb + **middle** | ⛄ Snowman |
 | thumb + **ring** | 🎁 Gift |
 | thumb + **pinky** | 🍬 Candy cane |

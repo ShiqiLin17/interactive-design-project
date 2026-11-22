@@ -33,6 +33,7 @@ STICKER_SIZE = 150           # on-screen sticker size in pixels
 PINCH_ON = 0.32              # fingertip distance (relative to hand size) to start a pinch
 PINCH_OFF = 0.48             # ...and to release it
 SPAWN_COOLDOWN = 0.45        # seconds between stickers
+MINI_SIZE = 46               # size of the little stickers shown on your fingertips
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODELS = {
@@ -311,6 +312,10 @@ class FogWindow:
         self.show_help = True
         self.sticker_imgs = build_all()
         self.stickers = []
+        # mini stickers that ride on your fingertips so you know which finger makes what
+        self.mini = {k: cv2.resize(img, None, fx=MINI_SIZE / img.shape[1], fy=MINI_SIZE / img.shape[1],
+                                   interpolation=cv2.INTER_AREA)
+                     for k, img in self.sticker_imgs.items()}
         self.states = {"Left": HandState(), "Right": HandState()}
         self.sticker_hand = "Right"
         self.grabbed = None
@@ -438,6 +443,23 @@ class FogWindow:
             label = text.render("drop to remove", 15, (255, 255, 255))
             if label is not None:
                 paste(out, label, c[0], c[1])
+        for label, _ in hands:
+            st = self.states[label]
+            if st.smooth is None or label != self.sticker_hand:
+                continue
+            lm = st.smooth
+            size = hand_size(lm)
+            for kind, tip in FINGER_TIPS.items():
+                d = lm[tip] - lm[tip - 1]
+                d = d / (np.linalg.norm(d) + 1e-6)
+                pos = lm[tip] + d * MINI_SIZE * 0.55           # just past the fingertip
+                close = np.linalg.norm(lm[THUMB_TIP] - lm[tip]) / size
+                grow = 1 + 0.45 * float(np.clip((0.9 - close) / 0.6, 0, 1))  # grows as it nears your thumb
+                if st.pinch == kind:
+                    grow = 1.5
+                tilt = math.degrees(math.atan2(d[0], -d[1])) * 0.5
+                paste(out, rotate_scale(self.mini[kind], -tilt, grow), int(pos[0]), int(pos[1]),
+                      shadow=0.35, lift=2)
         for label, _ in hands:
             st = self.states[label]
             if st.smooth is None:
