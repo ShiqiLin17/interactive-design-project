@@ -346,6 +346,7 @@ class HandState:
         self.pinch = None      # which finger is touching the thumb, or None
         self.last_pen = None
         self.pen_s = None
+        self.lost_since = None
         self.draw_start = 0.0
         self.drew_at = -10.0   # when this hand last drew (no wiping right after, so letters survive)
         self.last_edge = None
@@ -364,6 +365,16 @@ def is_fist(lm):
     curled = sum(np.linalg.norm(lm[tip] - wrist) < np.linalg.norm(lm[tip - 3] - wrist) * 1.15
                  for tip in (8, 12, 16, 20))
     return curled >= 3
+
+
+def still_writing(lm, margin=0.12):
+    """Keep writing at any finger angle: middle, ring and pinky stay folded, and the index is the finger
+    sticking out the most (measured from the palm, so turning or tilting the finger doesn't matter)."""
+    palm = lm[[0, 5, 9, 13, 17]].mean(axis=0)
+    size = hand_size(lm)
+    out = {t: float(np.linalg.norm(lm[t] - palm)) / size for t in (8, 12, 16, 20)}
+    folded = max(out[12], out[16], out[20]) < 0.95
+    return folded and out[8] > max(out[12], out[16], out[20]) + margin
 
 
 def is_sideways(lm, already=False):
@@ -543,8 +554,17 @@ class FogWindow:
             return
         pen = lm[8]                              # the index fingertip writes in the fog
         grab_pt = (lm[THUMB_TIP] + lm[12]) / 2   # thumb + middle: grab, move and zoom a sticker
-        # write "air canvas" style: only the index finger up = pen down; index + middle up = pen up (move freely)
-        pointing = is_pointing(lm) and d_mid > PINCH_ON
+        # write "air canvas" style: only the index finger out = pen down; index + middle out = pen up.
+        # Once writing, keep going at any angle (like holding a ballpoint), as long as the other fingers stay folded.
+        if st.pinch == "draw":
+            ok = still_writing(lm) and d_mid > PINCH_ON
+            if ok:
+                st.lost_since = None
+            elif st.lost_since is None:
+                st.lost_since = now
+            pointing = ok or now - st.lost_since < 0.25          # ride out a moment of shaky tracking
+        else:
+            pointing = still_writing(lm, margin=0.25) and d_mid > PINCH_ON
         if st.pinch is None:
             if d_mid < PINCH_ON and d_mid < d_idx:
                 self._start_grab(st, grab_pt, size)
