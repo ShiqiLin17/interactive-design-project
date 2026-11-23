@@ -3,7 +3,7 @@
 Your face:     make an "O" with your lips and blow at the window to fog it up (smiling won't)
 Sticker hand:  touch your thumb to a finger to pop out a sticker
                (each fingertip shows which one)   N = next page of stickers
-Other hand:    point with your index finger (other fingers bent) to write in the fog; thumb + middle grabs a sticker (closer = bigger);
+Other hand:    point your index finger at the screen (other fingers bent) to write in the fog; thumb + middle grabs a sticker (closer = bigger);
                thumb + ring switches your face filter
 Sticker hand:  close it into a fist and wipe with the pinky side
 
@@ -365,6 +365,25 @@ def is_fist(lm):
     return curled >= 3
 
 
+def is_pointing_at_screen(lm, z, already=False):
+    """Index finger pointing toward the camera/screen (not up at the ceiling), other fingers bent.
+
+    Pointing at the screen, the index finger looks short in the picture and its tip is much closer to
+    the camera than its knuckle (MediaPipe gives a depth value z: smaller = closer).
+    """
+    if z is None:
+        return False
+    size = hand_size(lm)
+    wrist = lm[0]
+    others_bent = all(np.linalg.norm(lm[t] - wrist) < np.linalg.norm(lm[t - 3] - wrist) * 1.25 for t in (12, 16, 20))
+    if not others_bent:
+        return False
+    flat = float(np.linalg.norm(lm[8] - lm[5]))          # index length as seen in the picture
+    toward = float(z[5] - z[8])                          # how much closer the tip is than the knuckle
+    k = 0.6 if already else 0.9                          # a bit easier to keep writing than to start
+    return toward > max(flat * k, size * 0.18)
+
+
 def is_pointing(lm):
     """Index finger straight, middle, ring and pinky bent down (like pointing)."""
     wrist = lm[0]
@@ -401,6 +420,7 @@ class FogWindow:
         self.breath_time = 0.0
         self.blowing = False
         self.show_help = True
+        self.hand_z = {}
         self.help_since = None
         self.sticker_imgs = load_my_stickers() or build_all(clear=False)
         self.sticker_imgs = {k: make_clear(v, STICKER_OPACITY) if STICKER_OPACITY < 1 else v
@@ -516,7 +536,8 @@ class FogWindow:
             return
         pen = lm[8]                              # pointing: the index fingertip writes in the fog
         grab_pt = (lm[THUMB_TIP] + lm[12]) / 2   # thumb + middle: grab, move and zoom a sticker
-        pointing = is_pointing(lm)
+        z = self.hand_z.get(self.move_hand())
+        pointing = is_pointing_at_screen(lm, z, st.pinch == "draw")
         if st.pinch is None:
             if d_mid < PINCH_ON and d_mid < d_idx:
                 self._start_grab(st, grab_pt, size)
@@ -675,7 +696,7 @@ class FogWindow:
         side = "right" if self.sticker_hand == "Right" else "left"
         line1 = (f"breathe to fog  \u00b7  {side} hand: fist to wipe, thumb to a finger for a sticker"
                  "  \u00b7  N for more")
-        line2 = "other hand: point to write  \u00b7  thumb + middle moves a sticker (closer = bigger)  \u00b7  thumb + ring: face filter"
+        line2 = "other hand: point at the screen to write  \u00b7  thumb + middle moves a sticker (closer = bigger)  \u00b7  thumb + ring: face filter"
         line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   N stickers   \u00b7   E filter   \u00b7   V camera   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
@@ -832,6 +853,7 @@ def main():
         for lms, handed in zip(result.hand_landmarks, result.handedness):
             pts = np.array([[p.x * w, p.y * h] for p in lms], np.float32)
             hands.append((handed[0].category_name, pts))
+            app.hand_z[handed[0].category_name] = np.array([p.z * w for p in lms], np.float32)  # depth, in pixels
 
         app.update(hands, face, now, dt)
         out = app.draw(frame, hands, now, dt)
