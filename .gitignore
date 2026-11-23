@@ -6,6 +6,11 @@
 .env
 .venv/
 __pycache__/
+air-throw/items/
+air-throw/me.jpg
+air-throw/my_photos/
+air-throw/profile.json
+air-throw/received/
 node_modules/
 results/
 screenshots/

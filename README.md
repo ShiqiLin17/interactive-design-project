@@ -10,6 +10,7 @@ Each project lives in its own folder with:
 
 | Project | What it does |
 |---|---|
+| [Air Throw](air-throw/) | Grab stickers, photos and your profile card in the air and throw them to friends' phones |
 | [Personal Color Test](color-palette/) | Korean-style personal color drape test with finger gestures and a side-by-side photo comparison |
 | [Christmas Fog Window](christmas-fog-window/) | Realistic fogged winter window: blow to fog, wipe or write with your fingers, decorate with gesture stickers |
 

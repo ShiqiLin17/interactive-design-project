@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>air throw</title>
+<style>
+  :root {
+    --ink: #3b3430; --muted: #8c817a; --glass: rgba(255,255,255,.55); --line: rgba(80,60,50,.12);
+    --script: "Snell Roundhand", "Apple Chancery", "Segoe Script", "Brush Script MT", cursive;
+    --sans: -apple-system, "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+  body {
+    font-family: var(--sans); color: var(--ink);
+    background: radial-gradient(120% 80% at 20% 0%, #fbf3ec 0%, #f3e6df 45%, #e9dfe3 100%);
+  }
+  body::after { /* fine paper grain */
+    content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .35; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .45  0 0 0 0 .42  0 0 0 .12 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+  .script { font-family: var(--script); }
+  #stage { position: fixed; inset: 0; }
+
+  /* people you can throw to, along the top */
+  #people {
+    position: fixed; left: 0; right: 0; top: env(safe-area-inset-top, 0); padding: 14px 12px 0;
+    display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; z-index: 5; pointer-events: none;
+  }
+  .person {
+    display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 6px; border-radius: 999px;
+    background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.7); box-shadow: 0 6px 20px rgba(80,50,40,.08);
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+  .person.aim { transform: scale(1.12); box-shadow: 0 8px 28px rgba(201,139,139,.45); }
+  .person .dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    color: #fff; font-size: 13px; font-weight: 600; }
+  .person .nm { font-family: var(--script); font-size: 20px; line-height: 1; }
+  #empty { position: fixed; top: 22px; left: 0; right: 0; text-align: center; color: var(--muted);
+    font-family: var(--script); font-size: 22px; pointer-events: none; }
+
+  /* things on your screen */
+  .item { position: absolute; left: 0; top: 0; will-change: transform; touch-action: none; user-select: none;
+    -webkit-user-select: none; -webkit-user-drag: none; filter: drop-shadow(0 10px 18px rgba(60,40,30,.18)); }
+  .item img { display: block; pointer-events: none; -webkit-user-drag: none; }
+  .polaroid { background: #fffdfa; padding: 8px 8px 30px; border-radius: 3px; }
+  .polaroid img { width: 100%; height: auto; border-radius: 1px; }
+  .card {
+    width: 250px; padding: 18px 18px 16px; border-radius: 18px; background: linear-gradient(160deg, #fffdfb, #f7efea);
+    border: 1px solid rgba(255,255,255,.9); text-align: center;
+  }
+  .card .ph { width: 76px; height: 76px; border-radius: 50%; margin: 0 auto 8px; background: #e9d8cf center/cover;
+    display: grid; place-items: center; font-family: var(--script); font-size: 34px; color: #fff; }
+  .card .name { font-family: var(--script); font-size: 32px; line-height: 1.05; }
+  .card .line { font-size: 13px; color: var(--muted); margin-top: 6px; letter-spacing: .02em; }
+  .card .hint { font-size: 11px; color: #b4a79f; margin-top: 10px; letter-spacing: .08em; text-transform: uppercase; }
+
+  /* bottom bar */
+  #bar { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0) + 14px); z-index: 6;
+    display: flex; justify-content: center; gap: 10px; }
+  .btn { border: 1px solid rgba(255,255,255,.8); background: var(--glass); backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px); color: var(--ink); border-radius: 999px; padding: 10px 16px;
+    font-family: var(--script); font-size: 20px; box-shadow: 0 6px 18px rgba(80,50,40,.08); cursor: pointer; }
+  .btn.on { background: rgba(201,139,139,.85); color: #fff; }
+  #missed { position: fixed; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0) + 74px); z-index: 6; display: none; }
+  #hint { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0) + 70px); text-align: center;
+    color: var(--muted); font-family: var(--script); font-size: 19px; pointer-events: none; transition: opacity 1s; }
+
+  /* sheets */
+  .sheet { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
+    background: rgba(250,244,240,.72); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 24px; }
+  .sheet.show { display: flex; }
+  .panel { width: min(360px, 100%); text-align: center; }
+  .panel h1 { font-family: var(--script); font-weight: 400; font-size: 54px; margin: 0 0 4px; }
+  .panel p { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+  .field { width: 100%; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: #fffdfb;
+    font: 16px var(--sans); color: var(--ink); margin-bottom: 10px; outline: none; }
+  .primary { width: 100%; padding: 12px; border-radius: 14px; border: 0; background: #3b3430; color: #fff;
+    font: 600 15px var(--sans); letter-spacing: .03em; cursor: pointer; }
+  .ghost { background: none; border: 0; color: var(--muted); margin-top: 10px; font: 14px var(--sans); cursor: pointer; }
+  #viewer .big { max-width: 92vw; max-height: 70vh; border-radius: 6px; box-shadow: 0 20px 60px rgba(60,40,30,.25); }
+  #viewer .links a { display: block; margin: 10px auto 0; width: min(300px, 90vw); padding: 12px; border-radius: 14px;
+    background: #3b3430; color: #fff; text-decoration: none; font: 600 15px var(--sans); }
+  #viewer .small { color: var(--muted); font-size: 13px; margin-top: 12px; }
+  #pickphoto { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="people"></div>
+<div id="empty">waiting for friends to join…</div>
+<div id="hint">swipe something up toward a friend to throw it</div>
+<button id="missed" class="btn">missed · 0</button>
+<div id="bar">
+  <button class="btn" id="addPhoto">+ photo</button>
+  <button class="btn" id="myCard">my card</button>
+  <button class="btn" id="catchMode">catch mode</button>
+</div>
+<input id="pickphoto" type="file" accept="image/*">
+
+<div class="sheet show" id="join">
+  <div class="panel">
+    <h1>air throw</h1>
+    <p>catch things thrown your way, and throw them on</p>
+    <input class="field" id="name" placeholder="your name" maxlength="24" autocomplete="name">
+    <button class="primary" id="go">join</button>
+  </div>
+</div>
+
+<div class="sheet" id="cardEdit">
+  <div class="panel">
+    <h1>my card</h1>
+    <p>what friends see when you throw your card</p>
+    <input class="field" id="cName" placeholder="name">
+    <input class="field" id="cInsta" placeholder="instagram (without @)">
+    <input class="field" id="cRed" placeholder="xiaohongshu (optional)">
+    <input class="field" id="cLinked" placeholder="linkedin url (optional)">
+    <input class="field" id="cPhone" placeholder="phone (optional)">
+    <button class="ghost" id="cPhotoBtn">add a profile photo</button>
+    <button class="primary" id="cSave">save & add card</button>
+    <button class="ghost" id="cCancel">cancel</button>
+  </div>
+</div>
+
+<div class="sheet" id="viewer"><div class="panel" id="viewerBody"></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const stage = $("#stage");
+let ws, me = null, people = [], catchMode = false, missed = [];
+const items = new Map();   // id -> {el, x, y, r, s, data}
+let profile = JSON.parse(localStorage.getItem("airthrow.card") || "null");
+
+/* ------------------------------------------------ join */
+$("#name").value = localStorage.getItem("airthrow.name") || "";
+$("#go").onclick = () => {
+  const n = $("#name").value.trim() || "friend";
+  localStorage.setItem("airthrow.name", n);
+  $("#join").classList.remove("show");
+  connect(n);
+};
+$("#name").addEventListener("keydown", e => { if (e.key === "Enter") $("#go").click(); });
+
+function connect(name) {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => ws.send(JSON.stringify({type: "join", name}));
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === "roster") { me = m.you; people = m.people; drawPeople(); }
+    if (m.type === "incoming") receive(m);
+  };
+  ws.onclose = () => setTimeout(() => connect(name), 1500);   // reconnect quietly
+}
+
+function drawPeople() {
+  const box = $("#people"); box.innerHTML = "";
+  for (const p of people) {
+    const d = document.createElement("div"); d.className = "person"; d.dataset.id = p.id;
+    d.innerHTML = `<div class="dot" style="background:${p.color}">${(p.name[0]||"?").toUpperCase()}</div><div class="nm">${esc(p.name)}</div>`;
+    box.appendChild(d);
+  }
+  $("#empty").style.display = people.length ? "none" : "block";
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+
+/* ------------------------------------------------ items on screen */
+function makeEl(data) {
+  const el = document.createElement("div"); el.className = "item";
+  if (data.kind === "card") {
+    const c = data.card || {};
+    const ph = c.photo ? `style="background-image:url('${c.photo}')"` : "";
+    const initial = c.photo ? "" : esc((c.name || "?")[0] || "?");
+    const lines = [c.instagram && "@" + c.instagram, c.xiaohongshu && "小红书 " + c.xiaohongshu].filter(Boolean)
+      .map(l => `<div class="line">${esc(l)}</div>`).join("");
+    el.innerHTML = `<div class="card"><div class="ph" ${ph}>${initial}</div><div class="name">${esc(c.name || "")}</div>${lines}<div class="hint">tap to connect</div></div>`;
+  } else {
+    const w = data.w || 220;
+    const inner = data.polaroid ? `<div class="polaroid" style="width:${w}px"><img src="${data.url}"></div>`
+                                : `<img src="${data.url}" style="width:${w}px">`;
+    el.innerHTML = inner;
+  }
+  return el;
+}
+
+function place(it) {
+  it.el.style.transform = `translate(${it.x}px, ${it.y}px) translate(-50%,-50%) rotate(${it.r}deg) scale(${it.s})`;
+}
+
+function addItem(data, x, y, r = (Math.random() - .5) * 14) {
+  if (!data.id || items.has(data.id)) data.id = Math.random().toString(36).slice(2);
+  const el = makeEl(data); stage.appendChild(el);
+  const it = {el, x, y, r, s: 1, data}; items.set(data.id, it); place(it); bindDrag(it);
+  return it;
+}
+
+/* ------------------------------------------------ dragging + throwing */
+function bindDrag(it) {
+  let pts = [], dragging = false, startX, startY, ox, oy, moved = false;
+  it.el.addEventListener("pointerdown", e => {
+    e.preventDefault(); it.el.setPointerCapture(e.pointerId); dragging = true; moved = false;
+    startX = e.clientX; startY = e.clientY; ox = it.x; oy = it.y; pts = [[e.clientX, e.clientY, performance.now()]];
+    stage.appendChild(it.el); it.s = 1.06; place(it);
+  });
+  it.el.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    it.x = ox + e.clientX - startX; it.y = oy + e.clientY - startY;
+    if (Math.hypot(e.clientX - startX, e.clientY - startY) > 6) moved = true;
+    pts.push([e.clientX, e.clientY, performance.now()]); if (pts.length > 6) pts.shift();
+    highlightAim(it, velocity(pts)); place(it);
+  });
+  const end = e => {
+    if (!dragging) return; dragging = false; it.s = 1; place(it); highlightAim(null);
+    if (!moved) return openViewer(it.data);
+    const v = velocity(pts);
+    if (v.y < -600 && Math.hypot(v.x, v.y) > 700 && people.length) throwIt(it, v);
+  };
+  it.el.addEventListener("pointerup", end); it.el.addEventListener("pointercancel", end);
+}
+
+function velocity(pts) {
+  if (pts.length < 2) return {x: 0, y: 0};
+  const a = pts[0], b = pts[pts.length - 1], dt = Math.max((b[2] - a[2]) / 1000, 1e-3);
+  return {x: (b[0] - a[0]) / dt, y: (b[1] - a[1]) / dt};
+}
+
+function targetFor(it, v) {
+  // follow the throw up to the people row, pick whoever is closest to where it would arrive
+  const chips = [...document.querySelectorAll(".person")]; if (!chips.length) return null;
+  const top = chips[0].getBoundingClientRect().bottom;
+  const t = (top - it.y) / Math.min(v.y, -1);
+  const xAt = it.x + v.x * t;
+  let best = null, bd = 1e9;
+  for (const c of chips) { const r = c.getBoundingClientRect(); const d = Math.abs((r.left + r.right) / 2 - xAt);
+    if (d < bd) { bd = d; best = c; } }
+  return best;
+}
+function highlightAim(it, v) {
+  document.querySelectorAll(".person.aim").forEach(c => c.classList.remove("aim"));
+  if (it && v && v.y < -400) { const c = targetFor(it, v); if (c) c.classList.add("aim"); }
+}
+
+function throwIt(it, v) {
+  const chip = targetFor(it, v); if (!chip) return;
+  const r = chip.getBoundingClientRect(), tx = (r.left + r.right) / 2, ty = r.top - 40;
+  ws.send(JSON.stringify({type: "throw", to: chip.dataset.id, item: it.data, vx: v.x, vy: v.y, spin: v.x / 40}));
+  chip.classList.add("aim"); setTimeout(() => chip.classList.remove("aim"), 500);
+  fly(it, it.x, it.y, tx, ty - 200, v.x / 30, 380, () => { it.el.remove(); items.delete(it.data.id); });
+}
+
+function fly(it, x0, y0, x1, y1, spin, ms, done) {
+  const t0 = performance.now(), r0 = it.r, s0 = it.s;
+  const step = now => {
+    const k = Math.min((now - t0) / ms, 1), e = 1 - Math.pow(1 - k, 3);
+    it.x = x0 + (x1 - x0) * e; it.y = y0 + (y1 - y0) * e; it.r = r0 + spin * e; it.s = s0 + (0.7 - s0) * e * (done ? 1 : 0);
+    place(it); if (k < 1) requestAnimationFrame(step); else done && done();
+  };
+  requestAnimationFrame(step);
+}
+
+/* ------------------------------------------------ receiving */
+function receive(m) {
+  const data = m.item; data.id = Math.random().toString(36).slice(2);
+  const chip = document.querySelector(`.person[data-id="${m.from}"]`);
+  const r = chip ? chip.getBoundingClientRect() : {left: innerWidth / 2, right: innerWidth / 2, top: 0};
+  const sx = (r.left + r.right) / 2, sy = -160;
+  const it = addItem(data, sx, sy, (m.spin || 0) * 2);
+  if (!catchMode) {
+    // lands on its own, settling with a little spin
+    const lx = innerWidth * (.3 + Math.random() * .4), ly = innerHeight * (.35 + Math.random() * .25);
+    flyLand(it, sx, sy, lx, ly, 900);
+  } else {
+    // flies across the screen: tap it to catch it, or it goes to "missed"
+    const ex = Math.random() < .5 ? -260 : innerWidth + 260, ey = innerHeight * (.5 + Math.random() * .3);
+    let caught = false;
+    it.el.addEventListener("pointerdown", () => { caught = true; }, {once: true, capture: true});
+    const t0 = performance.now(), ms = 2300;
+    const step = now => {
+      if (caught) { it.s = 1; place(it); return; }
+      const k = Math.min((now - t0) / ms, 1);
+      it.x = sx + (ex - sx) * k; it.y = sy + (ey - sy) * k - Math.sin(k * Math.PI) * innerHeight * .25; it.r += 2.2; place(it);
+      if (k < 1) requestAnimationFrame(step);
+      else { it.el.remove(); items.delete(it.data.id); missed.push(data); updateMissed(); }
+    };
+    requestAnimationFrame(step);
+  }
+  hint(`from ${m.from_name}`);
+}
+function flyLand(it, x0, y0, x1, y1, ms) {
+  const t0 = performance.now(), r0 = it.r, r1 = (Math.random() - .5) * 14;
+  const step = now => {
+    const k = Math.min((now - t0) / ms, 1);
+    const e = 1 - Math.pow(1 - k, 3), over = Math.sin(k * Math.PI) * .12;
+    it.x = x0 + (x1 - x0) * e; it.y = y0 + (y1 - y0) * e; it.r = r0 + (r1 - r0) * e; it.s = 1 + over; place(it);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function updateMissed() {
+  const b = $("#missed"); b.textContent = `missed · ${missed.length}`; b.style.display = missed.length ? "block" : "none";
+}
+$("#missed").onclick = () => {
+  for (const d of missed.splice(0)) addItem(d, innerWidth * (.3 + Math.random() * .4), innerHeight * (.4 + Math.random() * .2));
+  updateMissed();
+};
+
+/* ------------------------------------------------ adding things */
+$("#addPhoto").onclick = () => { pickFor = "photo"; $("#pickphoto").click(); };
+let pickFor = "photo";
+$("#pickphoto").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  const url = await upload(await shrink(f));
+  if (pickFor === "photo") addItem({kind: "image", url, polaroid: true, w: 200}, innerWidth / 2, innerHeight * .55);
+  else { $("#cPhotoBtn").textContent = "photo added ✓"; $("#cPhotoBtn").dataset.url = url; }
+};
+async function upload(blob) {
+  const fd = new FormData(); fd.append("file", blob, "photo.jpg");
+  const r = await fetch("/upload", {method: "POST", body: fd}); return (await r.json()).url;
+}
+function shrink(file, max = 1600) {   // keep photos light so they fly fast
+  return new Promise(res => {
+    const img = new Image(); img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = img.width * s; c.height = img.height * s;
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); c.toBlob(res, "image/jpeg", .9);
+    }; img.onerror = () => res(file); img.src = URL.createObjectURL(file);
+  });
+}
+
+$("#myCard").onclick = () => {
+  if (!profile) return openCardEditor();
+  addItem({kind: "card", card: profile}, innerWidth / 2, innerHeight * .55);
+};
+$("#myCard").addEventListener("contextmenu", e => { e.preventDefault(); openCardEditor(); });
+function openCardEditor() {
+  const p = profile || {};
+  $("#cName").value = p.name || localStorage.getItem("airthrow.name") || ""; $("#cInsta").value = p.instagram || "";
+  $("#cRed").value = p.xiaohongshu || ""; $("#cLinked").value = p.linkedin || ""; $("#cPhone").value = p.phone || "";
+  $("#cPhotoBtn").dataset.url = p.photo || ""; $("#cPhotoBtn").textContent = p.photo ? "change profile photo" : "add a profile photo";
+  $("#cardEdit").classList.add("show");
+}
+$("#cPhotoBtn").onclick = () => { pickFor = "card"; $("#pickphoto").click(); };
+$("#cCancel").onclick = () => $("#cardEdit").classList.remove("show");
+$("#cSave").onclick = () => {
+  profile = {name: $("#cName").value.trim(), instagram: $("#cInsta").value.trim().replace(/^@/, ""),
+    xiaohongshu: $("#cRed").value.trim(), linkedin: $("#cLinked").value.trim(), phone: $("#cPhone").value.trim(),
+    photo: $("#cPhotoBtn").dataset.url || ""};
+  localStorage.setItem("airthrow.card", JSON.stringify(profile));
+  $("#cardEdit").classList.remove("show");
+  addItem({kind: "card", card: profile}, innerWidth / 2, innerHeight * .55);
+};
+
+$("#catchMode").onclick = e => { catchMode = !catchMode; e.target.classList.toggle("on", catchMode);
+  hint(catchMode ? "catch mode: tap things as they fly by" : "things will land on their own"); };
+
+/* ------------------------------------------------ viewer */
+function openViewer(d) {
+  const b = $("#viewerBody");
+  if (d.kind === "card") {
+    const c = d.card || {}, links = [];
+    if (c.instagram) links.push(`<a href="https://instagram.com/${encodeURIComponent(c.instagram)}" target="_blank">open Instagram</a>`);
+    if (c.xiaohongshu) links.push(`<a href="https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(c.xiaohongshu)}" target="_blank">find on 小红书</a>`);
+    if (c.linkedin) links.push(`<a href="${c.linkedin.startsWith("http") ? c.linkedin : "https://" + c.linkedin}" target="_blank">open LinkedIn</a>`);
+    if (c.phone) links.push(`<a href="tel:${encodeURIComponent(c.phone)}">call ${esc(c.phone)}</a>`);
+    b.innerHTML = `<h1>${esc(c.name || "")}</h1><div class="links">${links.join("") || "<p>no links on this card</p>"}</div>`;
+  } else {
+    b.innerHTML = `<img class="big" src="${d.url}"><div class="small">press and hold the picture to save it to your Photos</div>`;
+  }
+  b.innerHTML += `<button class="ghost" onclick="document.getElementById('viewer').classList.remove('show')">close</button>`;
+  $("#viewer").classList.add("show");
+}
+$("#viewer").addEventListener("click", e => { if (e.target.id === "viewer") $("#viewer").classList.remove("show"); });
+
+let hintTimer;
+function hint(t) { const h = $("#hint"); h.textContent = t; h.style.opacity = 1; clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => h.style.opacity = 0, 3200); }
+setTimeout(() => $("#hint").style.opacity = 0, 6000);
+</script>
+</body>
+</html>
