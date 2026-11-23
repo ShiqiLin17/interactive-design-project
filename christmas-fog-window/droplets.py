@@ -26,7 +26,7 @@ def _shade(height, scale):
     rim = (1 - nz) ** 1.3 * inside                         # steep edges are dark
     spec = np.clip(nx * HALF[0] + ny * HALF[1] + nz * HALF[2], 0, 1) ** 60 * inside
     caustic = np.clip(ny, 0, 1) ** 2 * inside * (1 - rim)  # light focused at the bottom of the drop
-    mul = (1.02 - 0.42 * rim + 0.3 * caustic) * inside
+    mul = (1.02 - 0.26 * rim + 0.18 * caustic) * inside
     return mul, spec, caustic
 
 
@@ -35,7 +35,7 @@ class Droplets:
         self.w, self.h = w, h
         rng = np.random.default_rng(seed)
         self.rnd = random.Random(seed)
-        count = count or int(w * h / 380)
+        count = count or int(w * h / 260)
 
         height = np.zeros((h, w), np.float32)
         alpha = np.zeros((h, w), np.float32)
@@ -45,10 +45,10 @@ class Droplets:
         for _ in range(count):
             y = h * rng.beta(1.7, 1.1)                  # more (and bigger) drops lower on the glass
             x = rng.uniform(0, w)
-            r = float(np.clip(rng.lognormal(math.log(0.9 + 2.8 * y / h), 0.55), 0.6, 11))
+            r = float(np.clip(rng.lognormal(math.log(0.55 + 1.5 * y / h), 0.5), 0.45, 6.5))
             rx, ry = r * rng.uniform(0.85, 1.05), r * rng.uniform(1.0, 1.3)
             cy = y
-            if r > 5 and rng.random() < 0.35:            # some heavy drops sag into a teardrop
+            if r > 4 and rng.random() < 0.25:            # some heavy drops sag into a teardrop
                 ry *= 1.5
             x0, x1 = int(max(x - rx - 2, 0)), int(min(x + rx + 3, w))
             y0, y1 = int(max(cy - ry - 2, 0)), int(min(cy + ry + 3, h))
@@ -70,7 +70,7 @@ class Droplets:
         warm = warm_map[..., None]
         hl = np.float32([255, 248, 240]) * (1 - 0.3 * warm) + np.float32([120, 200, 255]) * 0.5 * warm
         self.mul = np.clip(np.repeat(mul[..., None], 3, axis=2) * 160, 0, 255).astype(np.uint8)
-        self.add = np.clip(spec[..., None] * hl * 1.1 + caustic[..., None] * 30, 0, 255).astype(np.uint8)
+        self.add = np.clip(spec[..., None] * hl * 0.8 + caustic[..., None] * 18, 0, 255).astype(np.uint8)
         self.alpha = alpha
         self.map_x, self.map_y = map_x, map_y
         self.runners = []
@@ -82,7 +82,7 @@ class Droplets:
             x = self.rnd.uniform(x1 + 20, x2 - 20)
             y = self.rnd.uniform(y1 + 20, y1 + (y2 - y1) * 0.6)
             if fog.value_at(x, y) > 0.6:
-                self.runners.append({"x": x, "y": y, "r": self.rnd.uniform(3.5, 6.5), "v": 0.0,
+                self.runners.append({"x": x, "y": y, "r": self.rnd.uniform(2.5, 4.2), "v": 0.0,
                                      "stop": self.rnd.uniform(y + 80, y2 + 40), "ph": self.rnd.uniform(0, 6)})
         alive = []
         for d in self.runners:
@@ -112,7 +112,7 @@ class Droplets:
         sx = np.clip(x - (xx - x) * 2.2, 0, self.w - 1)
         sy = np.clip(y - (yy - y) * 2.2 - r * 1.5, 0, self.h - 1)
         refr = cv2.remap(src, sx, sy, cv2.INTER_LINEAR).astype(np.float32)
-        col = refr * mul[..., None] + spec[..., None] * 280 + caustic[..., None] * 30
+        col = refr * mul[..., None] + spec[..., None] * 200 + caustic[..., None] * 18
         roi = out[y0:y1, x0:x1].astype(np.float32)
         out[y0:y1, x0:x1] = np.clip(roi * (1 - a) + col * a, 0, 255).astype(np.uint8)
 
@@ -122,7 +122,7 @@ class Droplets:
         src = cv2.addWeighted(clear, 0.62, fogged, 0.38, 0)   # drops on fogged glass look a little milky
         refr = cv2.remap(src, self.map_x, self.map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
         col = cv2.add(cv2.multiply(refr, self.mul, scale=1 / 160), self.add)
-        a = self.alpha * (0.3 + 0.7 * fog_m)               # wiping clears most drops away
+        a = self.alpha * (0.2 + 0.6 * fog_m)               # wiping clears most drops away
         out = cv2.blendLinear(fogged, col, 1 - a, a)
         for d in self.runners:
             self._draw_runner(out, clear, d)

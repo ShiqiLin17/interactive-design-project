@@ -85,7 +85,7 @@ def bauble():
 def snowflake():
     canvas = np.zeros((SIZE, SIZE), np.float32)
     c = np.array([SIZE / 2, SIZE / 2])
-    Rm = SIZE * 0.44
+    Rm = SIZE * 0.3
 
     def seg(p, q, th):
         cv2.line(canvas, (int(p[0]), int(p[1])), (int(q[0]), int(q[1])), 1.0, max(1, int(th)), cv2.LINE_AA)
