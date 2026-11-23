@@ -883,7 +883,7 @@ class FaceFX:
                 pos = pos + right * fw * 0.05
             _place(out, spr, pos, anc, width, roll)
             if name == "reindeer":
-                _place(out, self.red_nose, pts[4] - up * fw * 0.01, (0.5, 0.5), fw * 0.17, roll)
+                _place(out, self.red_nose, pts[4] - up * fw * 0.01, (0.5, 0.5), fw * 0.51, roll)
         elif name == "earmuffs":
             spr, anc = self.sprites["earmuffs"]
             a, b = pts[234] - right * fw * 0.06, pts[454] + right * fw * 0.06

@@ -12,7 +12,8 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, ".cache")
-VERSION = 4
+VERSION = 5
+EDGE_SOFTNESS = 3.5   # how soft the outer edges are (bigger = softer)
 
 
 # ------------------------------------------------------------------ basic painting tools
@@ -128,7 +129,7 @@ def outline(img, k=0.35, width=2.0):
     """Soft darker rim around the whole painting, like the ink/pigment edge on the sticker art."""
     a = img[..., 3]
     inner = cv2.erode((a > 0.5).astype(np.uint8), np.ones((3, 3), np.uint8), iterations=int(width))
-    rim = cv2.GaussianBlur(((a > 0.5) & (inner == 0)).astype(np.float32), (0, 0), width * 0.6)
+    rim = cv2.GaussianBlur(((a > 0.5) & (inner == 0)).astype(np.float32), (0, 0), width * 1.6)
     img[..., :3] *= (1 - k * np.clip(rim, 0, 1))[..., None]
     return img
 
@@ -205,7 +206,7 @@ def santa_hat(rng):
     fluff(lambda m: cv2.circle(m, (775, 470), 74, 1.0, -1, cv2.LINE_AA), 90, 1300)
     # a little holly sprig on the trim
     img = holly_on(img, 250, 560, 1.0, rng)
-    img = outline(img, 0.3, 2)
+    img = outline(img, 0.18, 3)
     img[..., :3] *= paper(H, W, rng)[..., None]
     return img, (0.49, 0.8)
 
@@ -280,7 +281,7 @@ def antlers(rng):
     img = holly_on(img, W / 2 + 250, 590, 0.9, rng)
     tips = [pts[-1] for pts, t in branches]
     img = snow_dabs(img, [(x, y - 8) for x, y in tips], rng, size=12)
-    img = outline(img, 0.35, 2)
+    img = outline(img, 0.2, 3)
     img[..., :3] *= paper(H, W, rng)[..., None]
     return img, (0.5, 0.88)
 
@@ -344,7 +345,7 @@ def tree_hat(rng):
             c[1] + (62 if i % 2 == 0 else 26) * math.sin(-math.pi / 2 + i * math.pi / 5)) for i in range(10)]
     cv2.fillPoly(star, [np.array(pts, np.int32)], 1.0, cv2.LINE_AA)
     img = over(img, wash(star, (90, 190, 228), rng, var=0.15, pool=0.4, soft=1.5, light=(-0.7, -0.7), shade=0.6))
-    img = outline(img, 0.3, 2)
+    img = outline(img, 0.18, 3)
     img[..., :3] *= paper(H, W, rng)[..., None]
     return img, (0.5, 0.9)
 
@@ -394,12 +395,24 @@ def garland_crown(rng):
         img = over(img, wash(m, (70, 170, 215), rng, var=0.15, pool=0.5, soft=1.2, light=(-0.8, -0.4), shade=0.7))
         img = over(img, ball(H, W, x, y + 16, 6, (60, 130, 175), rng))
     img = snow_dabs(img, [path[k] for k in range(4, len(path) - 4, 7)], rng, size=12)
-    img = outline(img, 0.3, 2)
+    img = outline(img, 0.18, 3)
     img[..., :3] *= paper(H, W, rng)[..., None]
     return img, (0.5, 0.86)
 
 
 # ------------------------------------------------------------------ build + cache
+def feather(img, sigma=3.0):
+    """Soften the outer edge: blur the alpha (and colors, premultiplied, so there are no dark halos)."""
+    a = img[..., 3:]
+    prem = cv2.GaussianBlur(img[..., :3] * a, (0, 0), sigma)
+    a2 = cv2.GaussianBlur(a, (0, 0), sigma)[..., None]
+    a2 = np.clip(a2 * 1.15, 0, 1)                     # keep the inside fully opaque
+    rgb = prem / np.maximum(cv2.GaussianBlur(a, (0, 0), sigma)[..., None], 1e-4)
+    inner = a > 0.98
+    rgb = np.where(inner, img[..., :3], rgb)          # inside: keep the sharp painted detail
+    return np.concatenate([rgb, np.maximum(a2, a * (a2 > 0.9))], -1)
+
+
 def _to_u8(img):
     out = np.zeros(img.shape, np.uint8)
     out[..., :3] = np.clip(img[..., :3], 0, 255)
@@ -419,7 +432,7 @@ def build_all(seed=7):
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED) if os.path.exists(path) else None
         if img is None:
             img, _ = fn(np.random.default_rng(seed + i))
-            img = _to_u8(img)
+            img = _to_u8(feather(img, EDGE_SOFTNESS))
             cv2.imwrite(path, img)
         out[name] = (img, anchors[name])
     return out
