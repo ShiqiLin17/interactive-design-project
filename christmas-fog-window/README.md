@@ -10,7 +10,7 @@ A realistic winter window: condensation with real-looking water droplets, frost 
 | Do this | What happens |
 |---|---|
 | 😮 **Open your mouth and blow** at the camera | The window fogs up, spreading out from your mouth |
-| ✋ **Open palm** (either hand) | Wipes the fog off wherever your hand moves |
+| ✊ **Closed fist** (either hand) | Wipe the fog with the pinky side of your fist, like wiping a real window |
 | 🤏 **Ornament hand:** thumb + **index** (each fingertip shows a mini preview) | A glossy red glass ornament appears |
 | thumb + **middle** | A silver snowflake |
 | thumb + **ring** | A faceted gold star |
@@ -21,7 +21,7 @@ A realistic winter window: condensation with real-looking water droplets, frost 
 
 The ornament hand is your **right** hand by default. Press **S** to swap. Both hands show small previews on their fingertips: mini ornaments on that hand, and a pencil icon (index) and move icon (middle) on the other hand.
 
-Tip: after you draw, the open-palm wipe pauses for a moment so you can lift your hand between letters without erasing them.
+Tip: after you draw, fist-wiping pauses for a moment so moving your hand between letters doesn't erase them.
 
 **Keys:** `S` swap hands · `R` fog the whole window · `W` clear all fog · `Z` undo · `C` clear stickers · `P` save a photo · `H` show help again (it fades after a few seconds) · `F` fullscreen · `Q` quit
 
@@ -48,7 +48,7 @@ The first run downloads two small MediaPipe models (hand + face tracking) into t
 ## How it works
 
 - **MediaPipe Face Landmarker** tracks your lips. When the gap between them is big enough, fog spreads out from your mouth.
-- **MediaPipe Hand Landmarker** tracks 21 points on each hand. Fingertip distances detect pinches, and an open palm with the thumb spread acts as the wiper. Hand size on screen (how close you are) controls sticker zoom.
+- **MediaPipe Hand Landmarker** tracks 21 points on each hand. Fingertip distances detect pinches, and a closed fist wipes along the pinky edge of the hand (pinky knuckle to wrist). Hand size on screen (how close you are) controls sticker zoom.
 - **Fog** is a mask over the view: heavily blurred, lightened, and tinted cool blue-white, glowing warm near the fire. Wiping and drawing cut clear lines into the mask.
 - **Droplets** each work like a tiny lens. They show a flipped, sharper view of what's behind the glass, with a bright highlight, a dark rim, and light focused at the bottom. Some drops slide down and leave clear trails in the fog.
 - **The glass** fills the screen with no frame. Frost grains creep in from the edges, granular snow is piled along the bottom, snow and soft fairy lights are outside, and firelight flickers and reflects in the glass.

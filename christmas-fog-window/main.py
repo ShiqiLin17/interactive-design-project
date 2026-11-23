@@ -4,7 +4,7 @@ Your face:     open your mouth and blow at the mirror to fog it up
 Sticker hand:  touch your thumb to a finger to pop out a sticker
                index = glass ornament, middle = snowflake, ring = gold star, pinky = holly
 Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger)
-Either hand:   open palm wipes the fog away
+Either hand:   close your hand into a fist and wipe with the pinky side
 
 Keys: S swap hands · R fog all · W wipe all · H help · Z undo · C clear stickers · P screenshot · F fullscreen · Q quit
 """
@@ -39,7 +39,7 @@ MINI_SIZE = 46               # size of the little stickers shown on your fingert
 DRAW_WIDTH = 22              # thickness of the line when you draw in the fog
 ZOOM_MIN, ZOOM_MAX = 0.4, 3.5
 HELP_SECONDS = 12            # the help text fades away after this long (press H to show it again)
-WIPE_PAUSE_AFTER_DRAW = 1.5  # seconds after drawing before an open palm wipes again
+WIPE_PAUSE_AFTER_DRAW = 1.0  # seconds after drawing before a fist wipes again
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODELS = {
@@ -172,6 +172,14 @@ class Fog:
         r = max(1, int(round(radius / s)))
         cv2.line(self.mask, a, b, 0.0, 2 * r, cv2.LINE_AA)
         cv2.circle(self.mask, b, r, 0.0, -1, cv2.LINE_AA)
+
+    def wipe_sweep(self, edge0, edge1, radius):
+        """Wipe the area swept by a line segment moving from edge0 to edge1 (like the side of a fist)."""
+        s = self.s
+        pts = np.array([edge0[0], edge0[1], edge1[1], edge1[0]], np.float32) / s
+        cv2.fillPoly(self.mask, [pts.astype(np.int32)], 0.0, cv2.LINE_AA)
+        for e in (edge0, edge1):
+            self.wipe(e[0], e[1], radius)
 
     def breathe(self, x, y, radius, amount):
         """Add fog in a soft cloud around (x, y)."""
@@ -309,7 +317,9 @@ class HandState:
         self.last_pen = None
         self.draw_start = 0.0
         self.drew_at = -10.0   # when this hand last drew (no wiping right after, so letters survive)
-        self.last_palm = None
+        self.last_edge = None
+        self.pinch_since = 0.0
+        self.spawned = False
         self.smooth = None
 
 
@@ -317,13 +327,25 @@ def hand_size(lm):
     return np.linalg.norm(lm[0] - lm[9]) + 1e-6
 
 
-def is_open(lm):
-    """A clearly open palm: 4 fingers straight and the thumb spread away from the hand."""
+def is_fist(lm):
+    """A closed hand: at least 3 fingertips curled in (closer to the wrist than their knuckles)."""
     wrist = lm[0]
-    up = sum(np.linalg.norm(lm[tip] - wrist) > np.linalg.norm(lm[tip - 2] - wrist) * 1.1
-             for tip in (8, 12, 16, 20))
-    thumb_out = np.linalg.norm(lm[THUMB_TIP] - lm[5]) > hand_size(lm) * 0.55
-    return up >= 4 and thumb_out
+    curled = sum(np.linalg.norm(lm[tip] - wrist) < np.linalg.norm(lm[tip - 3] - wrist) * 1.15
+                 for tip in (8, 12, 16, 20))
+    return curled >= 3
+
+
+def fist_edge(lm, size):
+    """The pinky side of a closed fist, from the pinky knuckle down to the wrist (the part you wipe with)."""
+    a, b = lm[17], lm[0]
+    d = b - a
+    a2, b2 = a - d * 0.2, b + d * 0.15
+    n = np.array([-d[1], d[0]])
+    n = n / (np.linalg.norm(n) + 1e-6)
+    if np.dot(n, a - lm[9]) < 0:          # point away from the palm, toward the pinky edge
+        n = -n
+    off = n * size * 0.12
+    return a2 + off, b2 + off
 
 
 class FogWindow:
@@ -375,21 +397,28 @@ class FogWindow:
             st.smooth = lm if st.smooth is None else st.smooth * 0.45 + lm * 0.55
             lm = st.smooth
             size = hand_size(lm)
+            # closed fist: wipe with the pinky side of the hand (unless you're holding an ornament)
+            fist = is_fist(lm) and now - st.drew_at > WIPE_PAUSE_AFTER_DRAW
+            if fist and st.pinch != "grab":
+                if st.pinch is not None and not (label == self.sticker_hand and st.spawned):
+                    st.pinch = None              # a pinch that was really a fist closing: cancel it
+                if st.pinch is None:
+                    e0, e1 = fist_edge(lm, size)
+                    if st.last_edge is not None:
+                        self.fog.wipe_sweep(st.last_edge, (e0, e1), size * 0.2)
+                    else:
+                        self.fog.wipe(e0, e1, size * 0.2)
+                    st.last_edge = (e0, e1)
+                    continue
+            st.last_edge = None
             if label == self.sticker_hand:
                 self._sticker_hand(st, lm, size, now)
             else:
                 self._move_hand(st, lm, size, now)
-            # wipe with an open palm (only when not pinching)
-            palm = lm[[0, 5, 9, 13, 17]].mean(axis=0)
-            if st.pinch is None and is_open(lm) and now - st.drew_at > WIPE_PAUSE_AFTER_DRAW:
-                self.fog.wipe(st.last_palm if st.last_palm is not None else palm, palm, size * 0.95)
-                st.last_palm = palm
-            else:
-                st.last_palm = None
 
         for label, st in self.states.items():
             if label not in seen:
-                st.smooth, st.last_palm = None, None
+                st.smooth, st.last_edge = None, None
                 if st.pinch is not None:
                     st.pinch = None
                     if label == self.move_hand():
@@ -402,14 +431,17 @@ class FogWindow:
         kind = min(dists, key=dists.get)
         if st.pinch is None:
             if dists[kind] < PINCH_ON:
-                st.pinch = kind
-                if now - self.last_spawn > SPAWN_COOLDOWN:
-                    x, y = (lm[THUMB_TIP] + lm[FINGER_TIPS[kind]]) / 2
-                    self.stickers.append(Sticker(kind, self.sticker_imgs[kind], x, y, now))
-                    self.sparkles.burst(x, y)
-                    self.last_spawn = now
+                st.pinch, st.pinch_since, st.spawned = kind, now, False
         elif dists[st.pinch] > PINCH_OFF:
             st.pinch = None
+        # spawn once the touch has been held a moment (so closing your hand into a fist doesn't spawn one)
+        if st.pinch and not st.spawned and now - st.pinch_since > 0.12:
+            st.spawned = True
+            if now - self.last_spawn > SPAWN_COOLDOWN:
+                x, y = (lm[THUMB_TIP] + lm[FINGER_TIPS[st.pinch]]) / 2
+                self.stickers.append(Sticker(st.pinch, self.sticker_imgs[st.pinch], x, y, now))
+                self.sparkles.burst(x, y)
+                self.last_spawn = now
 
     def _move_hand(self, st, lm, size, now):
         d_idx = np.linalg.norm(lm[THUMB_TIP] - lm[8]) / size
@@ -502,7 +534,7 @@ class FogWindow:
                 paste(out, label, c[0], c[1])
         for label, _ in hands:
             st = self.states[label]
-            if st.smooth is None:
+            if st.smooth is None or st.last_edge is not None:   # hide previews while wiping with a fist
                 continue
             lm = st.smooth
             size = hand_size(lm)
@@ -563,7 +595,7 @@ class FogWindow:
             return
         gx1, gy1, gx2, gy2 = self.window.glass
         side = "right" if self.sticker_hand == "Right" else "left"
-        line1 = (f"blow to fog  \u00b7  open palm to wipe  \u00b7  {side} hand: index ornament, middle snowflake, "
+        line1 = (f"blow to fog  \u00b7  fist to wipe  \u00b7  {side} hand: index ornament, middle snowflake, "
                  "ring star, pinky holly")
         line2 = "other hand: index writes in the fog  \u00b7  middle holds an ornament, closer to enlarge"
         line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   H hide   \u00b7   Q quit"
