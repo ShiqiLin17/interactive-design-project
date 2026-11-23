@@ -645,8 +645,8 @@ class FaceFX:
         if BLEMISH:   # small spots that are darker or redder than the skin around them
             g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
             red = cv2.subtract(small[..., 2], small[..., 1])
-            g_bg = cv2.medianBlur(g, k)
-            red_bg = cv2.medianBlur(red, k)
+            g_bg = cv2.blur(g, (k, k))                 # local average of the skin around each pixel
+            red_bg = cv2.blur(red, (k, k))
             spot = (cv2.subtract(g_bg, g) > 6) | (cv2.subtract(red, red_bg) > 5)
             spot = spot & (cv2.resize(mask_u8, (sw, sh), interpolation=cv2.INTER_NEAREST) > 200)
             spot = cv2.dilate(spot.astype(np.uint8), np.ones((3, 3), np.uint8))
@@ -656,33 +656,36 @@ class FaceFX:
                 big[1:] = ss[1:, cv2.CC_STAT_AREA] > (fws * 0.04) ** 2  # only small spots, not features
                 spot[big[ll]] = 0
                 if spot.any():
-                    clean = cv2.resize(cv2.medianBlur(small, k), (rw, rh), interpolation=cv2.INTER_LINEAR)
-                    sm = cv2.GaussianBlur(cv2.resize(spot.astype(np.float32), (rw, rh)), (0, 0), 1.5)[..., None]
-                    roi[:] = (roi * (1 - sm) + clean * sm).astype(np.uint8)
-                    small = cv2.resize(roi, (sw, sh), interpolation=cv2.INTER_AREA)
-        # airbrush (edge-preserving smoothing at half size), then brighten to a pinkish fair tone
-        smooth = cv2.bilateralFilter(small, 9, 45, 9)
-        smooth = cv2.bilateralFilter(smooth, 7, 30, 7)
-        smooth = cv2.resize(smooth, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR).astype(np.float32)
-        # keep the fine detail (pores, lashes, hair) so the skin stays clear, only even out the unevenness
-        rf = roi.astype(np.float32)
-        detail = rf - cv2.GaussianBlur(rf, (0, 0), max(0.8, fw * 0.004))
-        smooth = smooth + detail * DETAIL_KEEP
-        m = cv2.resize(cv2.GaussianBlur(cv2.resize(mask_u8, (sw, sh)), (0, 0), max(1, fws * 0.06)),
-                       (rw, rh)).astype(np.float32) / 255 * SMOOTH
-        if FOLDS:   # nasolabial folds: extra smoothing + lift from the nose wing down to the mouth corner
-            fold = np.zeros(roi.shape[:2], np.float32)
+                    # heal on the small copy (that's what gets smoothed and shown); the fine detail added back
+                    # later comes from the full-size image, so heal it there too, but only inside the spots
+                    clean_s = cv2.medianBlur(small, 5)
+                    sm_s = cv2.GaussianBlur(spot.astype(np.float32), (0, 0), 0.8)
+                    small = cv2.blendLinear(small, clean_s, 1 - sm_s, sm_s)
+                    sm = cv2.resize(sm_s, (rw, rh), interpolation=cv2.INTER_LINEAR)
+                    clean = cv2.resize(clean_s, (rw, rh), interpolation=cv2.INTER_LINEAR)
+                    roi[:] = cv2.blendLinear(roi, clean, 1 - sm, sm)
+        # airbrush on the small copy (edge-preserving), plus extra softening along the nasolabial folds
+        smooth = cv2.bilateralFilter(small, 9, 55, 9)
+        m_small = cv2.GaussianBlur(cv2.resize(mask_u8, (sw, sh)), (0, 0), max(1, fws * 0.06)).astype(np.float32) / 255 * SMOOTH
+        if FOLDS:
+            fold = np.zeros((sh, sw), np.float32)
             up = _unit(pts[10] - pts[152])
             right = np.array([-up[1], up[0]])
-            for ala, corner, s in ((129, 61, -1), (358, 291, 1)):
-                a = pts[ala] - off + right * s * fw * 0.03
-                b = pts[corner] - off + right * s * fw * 0.06 - up * fw * 0.02
-                cv2.line(fold, tuple(a.astype(int)), tuple(b.astype(int)), 1.0, max(3, int(fw * 0.07)), cv2.LINE_AA)
-            fold = cv2.GaussianBlur(fold, (0, 0), max(1, fw * 0.03)) * FOLDS
-            very = cv2.resize(cv2.GaussianBlur(small, (0, 0), max(1, fws * 0.025)), (rw, rh)).astype(np.float32) + 6
-            smooth = smooth * (1 - fold[..., None]) + very * fold[..., None]
-            m = np.maximum(m, fold * 0.9)
-        roi[:] = np.clip(roi * (1 - m[..., None]) + smooth * m[..., None], 0, 255).astype(np.uint8)
+            for ala, corner, sgn in ((129, 61, -1), (358, 291, 1)):
+                a = (pts[ala] - off + right * sgn * fw * 0.03) * s
+                b = (pts[corner] - off + right * sgn * fw * 0.06 - up * fw * 0.02) * s
+                cv2.line(fold, tuple(a.astype(int)), tuple(b.astype(int)), 1.0, max(2, int(fws * 0.07)), cv2.LINE_AA)
+            fold = cv2.GaussianBlur(fold, (0, 0), max(1, fws * 0.03)) * FOLDS
+            very = cv2.GaussianBlur(small, (0, 0), max(1, fws * 0.025)).astype(np.float32) + 6
+            smooth = (smooth.astype(np.float32) * (1 - fold[..., None]) + very * fold[..., None])
+            m_small = np.maximum(m_small, fold * 0.9)
+        smooth = cv2.resize(np.clip(smooth, 0, 255).astype(np.uint8), (rw, rh), interpolation=cv2.INTER_LINEAR)
+        m = cv2.resize(m_small, (rw, rh), interpolation=cv2.INTER_LINEAR)
+        # keep the fine detail (pores, lashes, hair) so the skin stays clear: add back what the small copy lost
+        lost = cv2.subtract(roi, cv2.resize(small, (rw, rh), interpolation=cv2.INTER_LINEAR), dtype=cv2.CV_16S)
+        target = cv2.addWeighted(smooth.astype(np.int16), 1.0, lost, DETAIL_KEEP, 0, dtype=cv2.CV_16S)
+        target = cv2.convertScaleAbs(np.maximum(target, 0))
+        roi[:] = cv2.blendLinear(roi, target, 1 - m, m)
 
     def _soft_tint(self, out, center, rx, ry, color, k, angle=0.0):
         H, W = out.shape[:2]

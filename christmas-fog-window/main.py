@@ -14,6 +14,7 @@ import os
 import random
 import ssl
 import sys
+import threading
 import time
 import urllib.request
 
@@ -792,6 +793,53 @@ def pick_camera():
     return 0
 
 
+class Tracker(threading.Thread):
+    """Reads the camera and runs hand + face tracking in the background; the main loop draws the latest result."""
+
+    def __init__(self, cap, w, h, hand_lm, face_lm, mp):
+        super().__init__(daemon=True)
+        self.cap, self.w, self.h = cap, w, h
+        self.hand_lm, self.face_lm, self.mp = hand_lm, face_lm, mp
+        self.lock = threading.Lock()
+        self.cond = threading.Condition(self.lock)
+        self.latest, self.seq, self.running = None, 0, True
+        self.t0, self.last_ts = time.time(), -1
+
+    def run(self):
+        while self.running:
+            with self.lock:
+                cap = self.cap
+            ok, frame = cap.read()
+            if not ok:
+                time.sleep(0.01)
+                continue
+            if frame.shape[:2] != (self.h, self.w):
+                frame = cv2.resize(frame, (self.w, self.h))
+            frame = cv2.flip(frame, 1)  # mirror
+            now = time.time()
+            ts = max(int((now - self.t0) * 1000), self.last_ts + 1)
+            self.last_ts = ts
+            img = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            hands = self.hand_lm.detect_for_video(img, ts)
+            face = self.face_lm.detect_for_video(img, ts)
+            with self.cond:
+                self.latest = (frame, hands, face, now)
+                self.seq += 1
+                self.cond.notify_all()
+
+    def get(self, last_seq, timeout=1.0):
+        """Wait for a frame newer than last_seq; returns (seq, (frame, hands, face, time)) or (seq, None)."""
+        with self.cond:
+            self.cond.wait_for(lambda: self.seq != last_seq or not self.running, timeout)
+            if self.seq == last_seq:
+                return last_seq, None
+            return self.seq, self.latest
+
+    def stop(self):
+        self.running = False
+        self.join(timeout=2)
+
+
 def open_camera(index):
     cap = cv2.VideoCapture(index)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
@@ -844,26 +892,22 @@ def main():
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(win, w, h)
     fullscreen = False
-    start = last = time.time()
-    last_ts = -1
+    last = time.time()
 
+    # the camera + hand/face tracking run on their own thread, so the next frame is being tracked
+    # while this one is drawn (much smoother than doing them one after the other)
+    tracker = Tracker(cap, w, h, landmarker, face_landmarker, mp)
+    tracker.start()
+    seq = 0
     while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        if frame.shape[:2] != (h, w):
-            frame = cv2.resize(frame, (w, h))
-        frame = cv2.flip(frame, 1)  # mirror
-        now = time.time()
-        dt = min(now - last, 0.1)
+        seq, item = tracker.get(seq)
+        if item is None:
+            if not tracker.is_alive():
+                break
+            continue
+        frame, result, face_result, now = item
+        dt = min(max(now - last, 1e-3), 0.1)
         last = now
-
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        ts = max(int((now - start) * 1000), last_ts + 1)
-        last_ts = ts
-        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result = landmarker.detect_for_video(mp_img, ts)
-        face_result = face_landmarker.detect_for_video(mp_img, ts)
 
         face = None
         if face_result.face_landmarks:
@@ -925,7 +969,9 @@ def main():
                 c2 = open_camera(nxt)
                 ok2, _ = c2.read()
                 if ok2:
-                    cap.release()
+                    with tracker.lock:
+                        old, tracker.cap = tracker.cap, c2
+                    old.release()
                     cap, cam_index = c2, nxt
                     cam_label_at = time.time()
                     save_camera(cam_index)
@@ -946,7 +992,8 @@ def main():
         if cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
             break
 
-    cap.release()
+    tracker.stop()
+    tracker.cap.release()
     landmarker.close()
     face_landmarker.close()
     cv2.destroyAllWindows()
