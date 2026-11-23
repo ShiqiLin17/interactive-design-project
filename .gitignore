@@ -4,6 +4,7 @@
 .env
 .venv/
 __pycache__/
+my_stickers/
 node_modules/
 results/
 screenshots/

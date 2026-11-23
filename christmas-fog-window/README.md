@@ -25,7 +25,19 @@ The ornament hand is your **right** hand by default. Press **S** to swap. Both h
 
 Tip: after you draw, fist-wiping pauses for a moment so moving your hand between letters doesn't erase them.
 
-**Keys:** `E` switch face filter · `S` swap hands · `R` fog the whole window · `W` clear all fog · `Z` undo · `C` clear stickers · `P` save a photo · `H` show help again (it fades after a few seconds) · `F` fullscreen · `Q` quit
+**Keys:** `N` next page of stickers · `E` switch face filter · `S` swap hands · `R` fog the whole window · `W` clear all fog · `Z` undo · `C` clear stickers · `P` save a photo · `H` show help again (it fades after a few seconds) · `F` fullscreen · `Q` quit
+
+## Your own stickers
+
+Put transparent PNGs in a folder called `my_stickers/` inside this folder, and they replace the built-in ornaments automatically, in filename order (`01.png`, `02.png`, ...). Your sticker hand holds 4 at a time, one per finger, and the fingertip previews show which is which. Press **N** to flip to the next 4.
+
+Have a sticker *sheet* on a white background instead? Cut it into separate stickers with:
+
+```bash
+python cut_stickers.py path/to/sheet.jpg
+```
+
+`my_stickers/` is kept out of git, so artwork you don't own never gets uploaded to GitHub.
 
 ## Face filters
 
@@ -75,5 +87,6 @@ The first run downloads two small MediaPipe models (hand + face tracking) into t
 - `window.py`: frost, snow, lighting and the world outside
 - `droplets.py`: water droplets and sliding drops
 - `facefx.py`: the face filters
+- `cut_stickers.py`: cuts a sticker sheet into separate transparent PNGs
 - `stickers.py`: the ornaments
 - `text.py`: elegant script fonts for the on-screen text

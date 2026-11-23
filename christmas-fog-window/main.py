@@ -2,7 +2,7 @@
 
 Your face:     open your mouth and blow at the mirror to fog it up
 Sticker hand:  touch your thumb to a finger to pop out a sticker
-               index = glass ornament, middle = snowflake, ring = gold star, pinky = holly
+               (each fingertip shows which one)   N = next page of stickers
 Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger)
 Either hand:   close your hand into a fist and wipe with the pinky side
 
@@ -19,7 +19,7 @@ import urllib.request
 import cv2
 import numpy as np
 
-from stickers import build_all
+from stickers import build_all, make_clear
 from window import RealWindow
 from droplets import Droplets
 from facefx import FaceFX
@@ -50,11 +50,32 @@ MODELS = {
                             "face_landmarker/float16/latest/face_landmarker.task",
 }
 
-FINGER_TIPS = {"bauble": 8, "snowflake": 12, "star": 16, "holly": 20}
+TIPS = [8, 12, 16, 20]          # index, middle, ring, pinky
+MY_STICKERS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "my_stickers")
 THUMB_TIP = 4
 
 
 # ---------------------------------------------------------------- helpers
+def load_my_stickers():
+    """Your own sticker images (transparent PNGs) from my_stickers/, in filename order. None if there are none."""
+    if not os.path.isdir(MY_STICKERS):
+        return None
+    imgs = {}
+    for fn in sorted(os.listdir(MY_STICKERS)):
+        if fn.lower().endswith(".png"):
+            img = cv2.imread(os.path.join(MY_STICKERS, fn), cv2.IMREAD_UNCHANGED)
+            if img is None:
+                continue
+            if img.ndim == 2 or img.shape[2] == 3:      # no transparency: add a solid alpha channel
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGRA if img.ndim == 2 else cv2.COLOR_BGR2BGRA)
+            s = 320 / max(img.shape[:2])
+            if s < 1:
+                img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+            imgs[os.path.splitext(fn)[0]] = img
+    return imgs or None
+
+
+
 def download_model(name):
     path = os.path.join(HERE, name)
     url = MODELS[name]
@@ -286,7 +307,7 @@ class Sticker:
         self.angle = random.uniform(-15, 15)
         self.born = now
         self.base = img                                  # full resolution, so zooming in stays sharp
-        self.base_scale = STICKER_SIZE / img.shape[1]
+        self.base_scale = STICKER_SIZE / max(img.shape[:2])
         self.zoom = 1.0
         self.held = False
         self.dropped = None
@@ -363,10 +384,16 @@ class FogWindow:
         self.blowing = False
         self.show_help = True
         self.help_since = None
-        self.sticker_imgs = build_all(clear=True, opacity=STICKER_OPACITY)
+        self.sticker_imgs = load_my_stickers() or build_all(clear=False)
+        self.sticker_imgs = {k: make_clear(v, STICKER_OPACITY) if STICKER_OPACITY < 1 else v
+                             for k, v in self.sticker_imgs.items()}
+        kinds = list(self.sticker_imgs)
+        self.pages = [[kinds[(p + j) % len(kinds)] for j in range(4)] for p in range(0, len(kinds), 4)]
+        self.page = 0
+        self.page_changed_at = -10.0
         self.stickers = []
         # mini stickers that ride on your fingertips so you know which finger makes what
-        self.mini = {k: cv2.resize(img, None, fx=MINI_SIZE / img.shape[1], fy=MINI_SIZE / img.shape[1],
+        self.mini = {k: cv2.resize(img, None, fx=MINI_SIZE / max(img.shape[:2]), fy=MINI_SIZE / max(img.shape[:2]),
                                    interpolation=cv2.INTER_AREA)
                      for k, img in self.sticker_imgs.items()}
         self.states = {"Left": HandState(), "Right": HandState()}
@@ -374,6 +401,14 @@ class FogWindow:
         self.grabbed = None
         self.grab_offset = (0, 0)
         self.last_spawn = 0.0
+
+    def finger_tips(self):
+        """The 4 stickers on the current page, mapped to index/middle/ring/pinky fingertips."""
+        return dict(zip(self.pages[self.page], TIPS))
+
+    def next_page(self, now):
+        self.page = (self.page + 1) % len(self.pages)
+        self.page_changed_at = now
 
     def move_hand(self):
         return "Left" if self.sticker_hand == "Right" else "Right"
@@ -430,18 +465,19 @@ class FogWindow:
         self.drops.update_runners(self.fog, self.window.glass, dt)
 
     def _sticker_hand(self, st, lm, size, now):
-        dists = {k: np.linalg.norm(lm[THUMB_TIP] - lm[i]) / size for k, i in FINGER_TIPS.items()}
+        tips = self.finger_tips()
+        dists = {k: np.linalg.norm(lm[THUMB_TIP] - lm[i]) / size for k, i in tips.items()}
         kind = min(dists, key=dists.get)
         if st.pinch is None:
             if dists[kind] < PINCH_ON:
                 st.pinch, st.pinch_since, st.spawned = kind, now, False
-        elif dists[st.pinch] > PINCH_OFF:
+        elif st.pinch not in dists or dists[st.pinch] > PINCH_OFF:
             st.pinch = None
         # spawn once the touch has been held a moment (so closing your hand into a fist doesn't spawn one)
         if st.pinch and not st.spawned and now - st.pinch_since > 0.12:
             st.spawned = True
             if now - self.last_spawn > SPAWN_COOLDOWN:
-                x, y = (lm[THUMB_TIP] + lm[FINGER_TIPS[st.pinch]]) / 2
+                x, y = (lm[THUMB_TIP] + lm[tips[st.pinch]]) / 2
                 self.stickers.append(Sticker(st.pinch, self.sticker_imgs[st.pinch], x, y, now))
                 self.sparkles.burst(x, y)
                 self.last_spawn = now
@@ -553,7 +589,7 @@ class FogWindow:
                     active = (st.pinch == "grab" and icon == "move") or (st.pinch == "draw" and icon == "draw")
                     draw_badge(out, pos, icon, 1.35 if active else grow, active)
                 continue
-            for kind, tip in FINGER_TIPS.items():
+            for kind, tip in self.finger_tips().items():
                 d = lm[tip] - lm[tip - 1]
                 d = d / (np.linalg.norm(d) + 1e-6)
                 pos = lm[tip] + d * MINI_SIZE * 0.55           # just past the fingertip
@@ -586,6 +622,11 @@ class FogWindow:
                 if tag is not None:
                     w0 = lm[0]
                     paste(out, tag, int(w0[0]), int(w0[1] + 34))
+        if len(self.pages) > 1 and now - self.page_changed_at < 1.8:
+            k = 1 - max(0.0, (now - self.page_changed_at - 1.0) / 0.8)
+            label = text.render(f"stickers  {self.page + 1} of {len(self.pages)}", 40, (255, 250, 242), "script", 0.6)
+            if label is not None:
+                paste(out, label, self.w // 2, int(self.h * 0.12), opacity=k)
         if now - self.facefx.changed_at < 1.8:   # show the filter name when you switch
             k = 1 - max(0.0, (now - self.facefx.changed_at - 1.0) / 0.8)
             label = text.render(self.facefx.name, 40, (255, 250, 242), "script", 0.6)
@@ -604,10 +645,10 @@ class FogWindow:
             return
         gx1, gy1, gx2, gy2 = self.window.glass
         side = "right" if self.sticker_hand == "Right" else "left"
-        line1 = (f"breathe to fog  \u00b7  fist to wipe  \u00b7  {side} hand: index ornament, middle snowflake, "
-                 "ring star, pinky holly")
+        line1 = (f"breathe to fog  \u00b7  fist to wipe  \u00b7  {side} hand: touch your thumb to a finger for a sticker"
+                 "  \u00b7  N for more stickers")
         line2 = "other hand: index writes in the fog  \u00b7  middle holds a sticker, closer to enlarge"
-        line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   E filter   \u00b7   H hide   \u00b7   Q quit"
+        line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   N stickers   \u00b7   E filter   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
             img = text.render(line, 21 if i < 2 else 17, (255, 248, 238) if i < 2 else (235, 225, 210),
@@ -715,6 +756,8 @@ def main():
             path = os.path.join("screenshots", time.strftime("christmas-fog-window-%Y%m%d-%H%M%S.png"))
             cv2.imwrite(path, out)
             print("Saved", path)
+        elif key == ord("n"):
+            app.next_page(now)
         elif key == ord("e"):
             app.facefx.next(now)
         elif key == ord("h"):
