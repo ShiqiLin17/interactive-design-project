@@ -27,7 +27,8 @@ EYE_ENLARGE = 0.0       # bigger eyes
 EYE_LOWER = 0.0         # move eyes lower (fraction of face height)
 NOSE_SLIM = 0.0         # narrower nose wings (鼻翼)
 HAIRLINE_LOWER = 0.0    # lower hairline (fraction of face height)
-SMOOTH = 0.9            # skin airbrushing
+SMOOTH = 0.75           # skin smoothing (evens out tone, keeps it clear)
+DETAIL_KEEP = 0.8       # how much fine skin detail to keep (clearer, not blurry)
 FOLDS = 0.8             # soften nasolabial folds (法令纹)
 BLEMISH = True          # remove small spots and pimples
 MAKEUP = True           # natural makeup: blush, lip tint, brows, lash line, brighter under-eyes
@@ -386,6 +387,68 @@ class ShapeProfile:
         return (Lx * ex[0] + Ly * ey[0]) * s, (Lx * ex[1] + Ly * ey[1]) * s
 
 
+# ------------------------------------------------------------------ learned makeup
+class MakeupMap:
+    """Shiqi's Douyin makeup, learned from her before/after video.
+
+    my_makeup.png stores, for every spot of a reference face, how much Douyin multiplies the color there
+    (blush gradient, lip tint, aegyo-sal highlight, brightening, soft shading). Each frame we line the
+    reference face up with the live face using the landmarks and multiply the colors.
+    """
+    def __init__(self, png, meta):
+        d = json.load(open(meta))
+        img = cv2.imread(png, cv2.IMREAD_UNCHANGED)
+        self.R = img.astype(np.float32) / d["scale"]
+        self.ref = np.array(d["ref_landmarks"], np.float32)
+        self.g = np.float32(d["global_ratio_bgr"])
+        x = np.arange(256, dtype=np.float32)
+        self.lut = np.stack([np.clip(x * gr, 0, 255) for gr in self.g], 1).astype(np.uint8).reshape(256, 1, 3)
+        self.sub = np.array(sorted(set(range(0, 468, 6)) | set(FACE_OVAL) | {33, 133, 263, 362, 1, 13, 14, 61, 291}))
+        le, re = self.ref[[33, 133]].mean(0), self.ref[[263, 362]].mean(0)
+        self.ref_iod = float(np.linalg.norm(re - le))
+
+    @staticmethod
+    def _similarity(src, dst):
+        """Best scale+rotation+shift mapping src points onto dst points."""
+        ms, md = src.mean(0), dst.mean(0)
+        a, b = src - ms, dst - md
+        n = (a ** 2).sum()
+        c = (a * b).sum() / n
+        s = (a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]).sum() / n
+        M = np.array([[c, -s], [s, c]], np.float32)
+        return M, md - ms @ M.T
+
+    def apply(self, out, pts):
+        H, W = out.shape[:2]
+        cur = pts[self.sub].astype(np.float32)
+        ref = self.ref[self.sub]
+        M, t = self._similarity(cur, ref)
+        sim = cur @ M.T + t
+        # smooth correction so every landmark lands exactly on its reference spot
+        sig = self.ref_iod * 0.45
+        d2 = ((sim[:, None] - sim[None]) ** 2).sum(-1)
+        Phi = np.exp(-d2 / (2 * sig * sig))
+        w = np.linalg.solve(Phi + 1e-2 * np.eye(len(sim)), ref - sim)
+        fw = float(np.linalg.norm(pts[234] - pts[454]))
+        x0, y0 = np.maximum(pts[:468].min(0) - fw * 0.45, 0).astype(int)
+        x1, y1 = np.minimum(pts[:468].max(0) + fw * 0.45, [W, H]).astype(int)
+        if x1 - x0 < 16 or y1 - y0 < 16:
+            return
+        q = max(6, int(fw / 28))                     # the map is smooth: line it up on a coarse grid
+        gx, gy = np.meshgrid(np.arange(x0, x1 + q, q, dtype=np.float32), np.arange(y0, y1 + q, q, dtype=np.float32))
+        g = np.stack([gx.ravel(), gy.ravel()], 1) @ M.T + t
+        g = g + np.exp(-((g[:, None] - sim[None]) ** 2).sum(-1) / (2 * sig * sig)) @ w
+        u = g[:, 0].reshape(gx.shape).astype(np.float32)
+        v = g[:, 1].reshape(gx.shape).astype(np.float32)
+        ratio = cv2.remap(self.R, u, v, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT,
+                          borderValue=tuple(float(c) for c in self.g))
+        gh, gw = ratio.shape[:2]
+        ratio = cv2.resize(ratio, ((gw - 1) * q, (gh - 1) * q), interpolation=cv2.INTER_LINEAR)[:y1 - y0, :x1 - x0]
+        roi = out[y0:y1, x0:x1].astype(np.float32)   # (a copy, taken before the overall brightening)
+        out[:] = cv2.LUT(out, self.lut)            # whole picture: Douyin's overall brightening
+        out[y0:y1, x0:x1] = np.clip(roi * ratio, 0, 255).astype(np.uint8)
+
+
 # ------------------------------------------------------------------ the filter
 class FaceFX:
     def __init__(self, seed=21):
@@ -410,6 +473,9 @@ class FaceFX:
         self.red_nose = _sphere_rgba(60, (35, 30, 210))
         prof = os.path.join(os.path.dirname(os.path.abspath(__file__)), "my_face_shape.json")
         self.profile = ShapeProfile(prof) if USE_MY_SHAPE and os.path.exists(prof) else None
+        here = os.path.dirname(os.path.abspath(__file__))
+        png, meta = os.path.join(here, "my_makeup.png"), os.path.join(here, "my_makeup.json")
+        self.makeup_map = MakeupMap(png, meta) if os.path.exists(png) and os.path.exists(meta) else None
         x = np.arange(256, dtype=np.float32)
         lift = lambda gain, add: np.clip(x * gain + add * (1 - x / 255) ** 0.5, 0, 255)
         self.lut = np.stack([lift(1.04, 6), lift(1.05, 7), lift(1.03, 6)], axis=1).astype(np.uint8).reshape(256, 1, 3)
@@ -442,9 +508,11 @@ class FaceFX:
 
     # ---------------------------------------------------------- main entry
     def apply(self, frame, pts, now):
+        lut = self.makeup_map.lut if self.makeup_map is not None else self.lut
         if pts is None:
-            return cv2.LUT(frame, self.lut)
-        frame = cv2.LUT(frame, self.lut)          # whole picture: a little brighter and less yellow
+            return cv2.LUT(frame, lut)
+        if self.makeup_map is None:
+            frame = cv2.LUT(frame, self.lut)      # whole picture: a little brighter and less yellow
         if self.shape_on:
             out, pts = self._reshape(frame, pts)
         else:
@@ -452,7 +520,10 @@ class FaceFX:
         fw = float(np.linalg.norm(pts[234] - pts[454])) + 1e-6
         self._skin(out, pts, fw)
         if self.makeup_on:
-            self._makeup(out, pts, fw, now)
+            if self.makeup_map is not None:
+                self.makeup_map.apply(out, pts)
+            else:
+                self._makeup(out, pts, fw, now)
         self._accessory(out, pts, fw, now)
         return out
 
@@ -562,13 +633,13 @@ class FaceFX:
             red = cv2.subtract(small[..., 2], small[..., 1])
             g_bg = cv2.medianBlur(g, k)
             red_bg = cv2.medianBlur(red, k)
-            spot = (cv2.subtract(g_bg, g) > 9) | (cv2.subtract(red, red_bg) > 8)
+            spot = (cv2.subtract(g_bg, g) > 6) | (cv2.subtract(red, red_bg) > 5)
             spot = spot & (cv2.resize(mask_u8, (sw, sh), interpolation=cv2.INTER_NEAREST) > 200)
             spot = cv2.dilate(spot.astype(np.uint8), np.ones((3, 3), np.uint8))
             nn, ll, ss, _ = cv2.connectedComponentsWithStats(spot)
             if nn > 1:
                 big = np.zeros(nn, bool)
-                big[1:] = ss[1:, cv2.CC_STAT_AREA] > (fws * 0.03) ** 2  # only small spots, not features
+                big[1:] = ss[1:, cv2.CC_STAT_AREA] > (fws * 0.04) ** 2  # only small spots, not features
                 spot[big[ll]] = 0
                 if spot.any():
                     clean = cv2.resize(cv2.medianBlur(small, k), (rw, rh), interpolation=cv2.INTER_LINEAR)
@@ -579,7 +650,10 @@ class FaceFX:
         smooth = cv2.bilateralFilter(small, 9, 45, 9)
         smooth = cv2.bilateralFilter(smooth, 7, 30, 7)
         smooth = cv2.resize(smooth, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR).astype(np.float32)
-        smooth = smooth * np.float32([1.03, 1.03, 1.01]) + np.float32([5, 5, 5])
+        # keep the fine detail (pores, lashes, hair) so the skin stays clear, only even out the unevenness
+        rf = roi.astype(np.float32)
+        detail = rf - cv2.GaussianBlur(rf, (0, 0), max(0.8, fw * 0.004))
+        smooth = smooth + detail * DETAIL_KEEP
         m = cv2.resize(cv2.GaussianBlur(cv2.resize(mask_u8, (sw, sh)), (0, 0), max(1, fws * 0.06)),
                        (rw, rh)).astype(np.float32) / 255 * SMOOTH
         if FOLDS:   # nasolabial folds: extra smoothing + lift from the nose wing down to the mouth corner

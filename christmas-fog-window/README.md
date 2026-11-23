@@ -46,8 +46,8 @@ Your face gets a Douyin-style beauty filter all the time, plus a Christmas acces
 
 **Beauty (always on), tuned to match Shiqi's favorite Douyin filter:**
 - Face shaping: an exact copy of how her Douyin filter reshapes her face (smaller face, slimmer jaw and chin, narrower nose, eyes that look bigger, shorter face and lower hairline). It was measured from her before/after video by tracking all 468 face points at the moment the filter switches on, and is stored in `my_face_shape.json`.
-- Skin: airbrushed, a little brighter and less yellow, softened nasolabial folds (法令纹), automatic blemish and pimple removal
-- Natural makeup: pink blush on the cheeks, rosy lips, softly defined brows and lash line, brighter under-eyes
+- Skin: blemishes and pimples removed automatically and tone evened out, while keeping fine skin detail so it stays clear (not blurry); softened nasolabial folds (法令纹)
+- Makeup: learned from her video. `my_makeup.png` stores how her Douyin filter changes the color at every spot of her face (blush gradient, lip tint, aegyo-sal (卧蚕) highlight, brightening, soft shading), and the app maps it onto her live face.
 
 **Accessories:** switch with **thumb + ring finger on your grab hand** (or press **E**):
 none (the default) → Santa hat → reindeer antlers + red nose → Christmas tree hat → garland crown with bells → fluffy earmuffs → floating pastel stars → mustache → snow in hair
@@ -91,6 +91,7 @@ The first run downloads two small MediaPipe models (hand + face tracking) into t
 - `droplets.py`: water droplets and sliding drops
 - `facefx.py`: the face filters
 - `my_face_shape.json`: Shiqi's measured Douyin face shape (reusable in future projects)
+- `my_makeup.png` / `my_makeup.json`: Shiqi's learned Douyin makeup and skin tone
 - `cut_stickers.py`: cuts a sticker sheet into separate transparent PNGs
 - `stickers.py`: the ornaments
 - `text.py`: elegant script fonts for the on-screen text
