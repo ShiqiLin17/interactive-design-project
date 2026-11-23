@@ -576,7 +576,7 @@ class FogWindow:
             else:
                 cv2.circle(out, p, 7, (255, 255, 255), 1, cv2.LINE_AA)
             if self.show_help:
-                tag = text.render("ornaments" if stick else "write  \u00b7  move", 24, (255, 255, 255), "script", 0.7)
+                tag = text.render("stickers" if stick else "write  \u00b7  move", 24, (255, 255, 255), "script", 0.7)
                 if self.grabbed is not None and not stick and st.pinch == "grab":
                     tag = text.render("closer for bigger, farther for smaller", 24, (255, 255, 255), "script", 0.7)
                 if tag is not None:
@@ -597,7 +597,7 @@ class FogWindow:
         side = "right" if self.sticker_hand == "Right" else "left"
         line1 = (f"blow to fog  \u00b7  fist to wipe  \u00b7  {side} hand: index ornament, middle snowflake, "
                  "ring star, pinky holly")
-        line2 = "other hand: index writes in the fog  \u00b7  middle holds an ornament, closer to enlarge"
+        line2 = "other hand: index writes in the fog  \u00b7  middle holds a sticker, closer to enlarge"
         line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
