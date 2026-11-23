@@ -121,6 +121,9 @@ def rotate_scale(img, angle, scale):
 
 def paste(frame, rgba, cx, cy, shadow=0.0, lift=0, opacity=1.0):
     """Alpha-blend an RGBA image onto frame, centered at (cx, cy)."""
+    if shadow > 0:     # give the soft shadow room to fade out (otherwise it's cut into a box)
+        p = int(3 * (6 + lift / 2) + 10 + lift * 1.5)
+        rgba = cv2.copyMakeBorder(rgba, p, p, p, p, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
     h, w = rgba.shape[:2]
     H, W = frame.shape[:2]
     alpha = rgba[..., 3].astype(np.float32) / 255 * opacity
@@ -137,7 +140,7 @@ def paste(frame, rgba, cx, cy, shadow=0.0, lift=0, opacity=1.0):
         frame[y1:y2, x1:x2] = (roi * (1 - sa) + src * sa).astype(np.uint8)
 
     if shadow > 0:
-        soft = cv2.GaussianBlur(alpha, (0, 0), 6 + lift / 2) * shadow
+        soft = cv2.GaussianBlur(alpha, (0, 0), 6 + lift / 2, borderType=cv2.BORDER_CONSTANT) * shadow
         blend(0.0, soft, 5 + lift, 8 + lift * 1.5)
     blend(rgba[..., :3].astype(np.float32), alpha, 0, 0)
 
@@ -669,11 +672,22 @@ class FogWindow:
                 for tip, icon in ((8, "draw"), (12, "move"), (16, "filter")):
                     d = lm[tip] - lm[tip - 1]
                     d = d / (np.linalg.norm(d) + 1e-6)
-                    pos = lm[tip] + d * 26
+                    pos = lm[tip] + d * 30
                     close = np.linalg.norm(lm[THUMB_TIP] - lm[tip]) / size
                     grow = 1 + 0.4 * float(np.clip((0.9 - close) / 0.6, 0, 1))
                     active = st.pinch == {"move": "grab", "draw": "draw", "filter": "filter"}[icon]
-                    draw_badge(out, pos, icon, 1.35 if active else grow, active)
+                    word = {"draw": "write", "move": "move", "filter": "filter"}[icon]
+                    size_px = int(22 * (1.25 if active else grow))
+                    col = (255, 236, 200) if active else (255, 252, 246)    # warm gold when in use
+                    label = text.render(word, size_px, col, "script", 0.75)
+                    if label is not None:
+                        # the word runs along the finger, just past the fingertip
+                        ang = -math.degrees(math.atan2(d[1], d[0]))
+                        if abs(ang) > 120:                          # never upside down
+                            ang += 180 if ang < 0 else -180
+                        rot = rotate_scale(label, ang, 1.0)
+                        c = lm[tip] + d * (10 + label.shape[1] / 2)
+                        paste(out, rot, int(c[0]), int(c[1]))
                 continue
             for kind, tip in self.finger_tips().items():
                 d = lm[tip] - lm[tip - 1]
@@ -691,7 +705,6 @@ class FogWindow:
             if st.smooth is None:
                 continue
             lm = st.smooth
-            stick = label == self.sticker_hand
             tip = (lm[THUMB_TIP] + lm[8 if st.pinch == "draw" else 12]) / 2
             p = (int(tip[0]), int(tip[1]))
             if st.pinch == "draw":
@@ -701,13 +714,6 @@ class FogWindow:
                 cv2.circle(out, p, 3, (170, 225, 255), -1, cv2.LINE_AA)
             else:
                 cv2.circle(out, p, 7, (255, 255, 255), 1, cv2.LINE_AA)
-            if self.show_help:
-                tag = text.render("stickers" if stick else "write  \u00b7  move  \u00b7  filter", 24, (255, 255, 255), "script", 0.7)
-                if self.grabbed is not None and not stick and st.pinch == "grab":
-                    tag = text.render("closer for bigger, farther for smaller", 24, (255, 255, 255), "script", 0.7)
-                if tag is not None:
-                    w0 = lm[0]
-                    paste(out, tag, int(w0[0]), int(w0[1] + 34))
         if len(self.pages) > 1 and now - self.page_changed_at < 1.8:
             k = 1 - max(0.0, (now - self.page_changed_at - 1.0) / 0.8)
             label = text.render(f"stickers  {self.page + 1} of {len(self.pages)}", 40, (255, 250, 242), "script", 0.6)
@@ -733,7 +739,7 @@ class FogWindow:
         side = "right" if self.sticker_hand == "Right" else "left"
         line1 = (f"breathe to fog  \u00b7  {side} hand: fist to wipe, thumb to a finger for a sticker"
                  "  \u00b7  N for more")
-        line2 = "other hand: pinch thumb + index to write  \u00b7  thumb + middle moves a sticker (closer = bigger)  \u00b7  thumb + ring: face filter"
+        line2 = "other hand: thumb + index writes  \u00b7  thumb + middle moves a sticker  \u00b7  thumb + ring: face filter"
         line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   N stickers   \u00b7   E filter   \u00b7   V camera   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
