@@ -367,6 +367,16 @@ def is_fist(lm):
     return curled >= 3
 
 
+def pen_still_down(lm):
+    """While writing: the pen stays down unless the middle finger (or the whole hand) opens up."""
+    palm = lm[[0, 5, 9, 13, 17]].mean(axis=0)
+    size = hand_size(lm)
+    out = lambda t: float(np.linalg.norm(lm[t] - palm)) / size
+    middle_up = out(12) > 1.05 and np.linalg.norm(lm[12] - lm[0]) > np.linalg.norm(lm[10] - lm[0]) * 1.1
+    open_hand = sum(np.linalg.norm(lm[t] - lm[0]) > np.linalg.norm(lm[t - 2] - lm[0]) * 1.1 for t in (12, 16, 20)) >= 3
+    return not (middle_up or open_hand)
+
+
 def still_writing(lm, margin=0.12):
     """Keep writing at any finger angle: middle, ring and pinky stay folded, and the index is the finger
     sticking out the most (measured from the palm, so turning or tilting the finger doesn't matter)."""
@@ -557,7 +567,9 @@ class FogWindow:
         # write "air canvas" style: only the index finger out = pen down; index + middle out = pen up.
         # Once writing, keep going at any angle (like holding a ballpoint), as long as the other fingers stay folded.
         if st.pinch == "draw":
-            ok = still_writing(lm) and d_mid > PINCH_ON
+            # once you're writing, the pen follows your index fingertip wherever it goes, at any angle or position;
+            # it only lifts when you raise your middle finger too (or open your hand)
+            ok = pen_still_down(lm) and d_mid > PINCH_ON
             if ok:
                 st.lost_since = None
             elif st.lost_since is None:

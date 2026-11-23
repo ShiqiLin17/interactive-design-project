@@ -19,7 +19,7 @@ When it starts, the glass is clear and it says *breathe on it...*
 | thumb + **pinky** | A holly sprig with berries |
 | 🤏 **Other hand:** thumb + **middle** on an ornament | Grab it and move it. Bring your hand **closer** to the camera to make it bigger, or **farther** to make it smaller. Let go to place it. |
 | ✨ **Other hand:** thumb + **ring** | Switch your face accessory |
-| ✍️ **Other hand:** raise **only your index finger** (raise index + middle to lift the pen and move without writing) | Draw in the fog with your fingertip and write your own words |
+| ✍️ **Other hand:** raise **only your index finger** to start writing. The pen then follows your fingertip anywhere, at any angle. Raise your **middle finger** too (or open your hand) to lift the pen | Draw in the fog with your fingertip and write your own words |
 | Drag an ornament to the circle in the corner | Removes it |
 
 The ornament hand is your **right** hand by default. Press **S** to swap. Both hands show small previews on their fingertips: mini ornaments on that hand, and a pencil icon (index) and move icon (middle) on the other hand.
