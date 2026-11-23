@@ -5,7 +5,7 @@ Three layers, applied in this order:
   2. Beauty skin    - airbrushed, brighter, slightly cooler (less yellow) skin, softer nasolabial folds (法令纹),
                       blemish removal
      + makeup       - natural: pink blush, rosy lips, softly defined brows and lash line, brighter under-eyes
-  3. Accessories    - Santa hat, reindeer, tree hat, garland crown, earmuffs, stars, mustache, snowy hair
+  3. Accessories    - Santa hat, reindeer, tree hat, garland crown, stars, mustache, snowy hair
                       (switch with thumb + ring finger on the grab hand, or the E key)
 
 Every strength is a setting below: 0 turns that effect off.
@@ -56,7 +56,7 @@ L_BROW_FULL = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46]
 R_BROW_FULL = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276]
 ALAE = [(64, 294), (129, 358), (98, 327)]
 
-ACCESSORIES = ["none", "santa hat", "reindeer", "tree hat", "garland crown", "earmuffs", "starry",
+ACCESSORIES = ["none", "santa hat", "reindeer", "tree hat", "garland crown", "starry",
                "mustache", "snowy hair"]
 
 
