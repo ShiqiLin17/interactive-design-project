@@ -12,14 +12,14 @@ When it starts, the glass is clear and it says *breathe on it...*
 | Do this | What happens |
 |---|---|
 | 😮 **Make an "O" with your lips and blow** at the camera (smiling or talking won't fog it) | The window fogs up, spreading out from your mouth |
-| ✊ **Closed fist** (either hand) | Wipe the fog with the pinky side of your fist, like wiping a real window |
+| ✊ **Closed fist** (sticker hand only) | Wipe the fog with the pinky side of your fist, like wiping a real window |
 | 🤏 **Ornament hand:** thumb + **index** (each fingertip shows a mini preview) | A glossy red glass ornament appears |
 | thumb + **middle** | A silver snowflake |
 | thumb + **ring** | A faceted gold star |
 | thumb + **pinky** | A holly sprig with berries |
 | 🤏 **Other hand:** thumb + **middle** on an ornament | Grab it and move it. Bring your hand **closer** to the camera to make it bigger, or **farther** to make it smaller. Let go to place it. |
 | ✨ **Other hand:** thumb + **ring** | Switch your face accessory |
-| ✍️ **Other hand:** thumb + **index** | Draw in the fog with your fingertip and write your own words |
+| ✍️ **Other hand:** **point** your index finger (other fingers bent) | Draw in the fog with your fingertip and write your own words |
 | Drag an ornament to the circle in the corner | Removes it |
 
 The ornament hand is your **right** hand by default. Press **S** to swap. Both hands show small previews on their fingertips: mini ornaments on that hand, and a pencil icon (index) and move icon (middle) on the other hand.
