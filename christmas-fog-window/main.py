@@ -3,7 +3,7 @@
 Your face:     make an "O" with your lips and blow at the window to fog it up (smiling won't)
 Sticker hand:  touch your thumb to a finger to pop out a sticker
                (each fingertip shows which one)   N = next page of stickers
-Other hand:    point your index finger at the screen (other fingers bent) to write in the fog; thumb + middle grabs a sticker (closer = bigger);
+Other hand:    turn it sideways (pinky side to the screen) and pinch thumb + index to write in the fog; thumb + middle grabs a sticker (closer = bigger);
                thumb + ring switches your face filter
 Sticker hand:  close it into a fist and wipe with the pinky side
 
@@ -365,6 +365,12 @@ def is_fist(lm):
     return curled >= 3
 
 
+def is_sideways(lm, already=False):
+    """Hand turned on its side, pinky edge toward the screen: the knuckles line up, so the palm looks narrow."""
+    palm = float(np.linalg.norm(lm[5] - lm[17]))         # index knuckle to pinky knuckle, as seen in the picture
+    return palm < hand_size(lm) * (0.5 if already else 0.4)
+
+
 def is_pointing_at_screen(lm, z, already=False):
     """Index finger pointing toward the camera/screen (not up at the ceiling), other fingers bent.
 
@@ -534,10 +540,11 @@ class FogWindow:
             if d_ring > PINCH_OFF:
                 st.pinch = None
             return
-        pen = lm[8]                              # pointing: the index fingertip writes in the fog
+        pen = (lm[THUMB_TIP] + lm[8]) / 2        # the pinched thumb + index tip writes in the fog
         grab_pt = (lm[THUMB_TIP] + lm[12]) / 2   # thumb + middle: grab, move and zoom a sticker
-        z = self.hand_z.get(self.move_hand())
-        pointing = is_pointing_at_screen(lm, z, st.pinch == "draw")
+        # write: thumb + index pinched with the hand turned sideways (pinky side toward the screen, like a pen)
+        pointing = d_idx < (PINCH_OFF if st.pinch == "draw" else PINCH_ON) and \
+            is_sideways(lm, st.pinch == "draw")
         if st.pinch is None:
             if d_mid < PINCH_ON and d_mid < d_idx:
                 self._start_grab(st, grab_pt, size)
@@ -655,7 +662,7 @@ class FogWindow:
                 continue
             lm = st.smooth
             stick = label == self.sticker_hand
-            tip = lm[8] if st.pinch == "draw" else (lm[THUMB_TIP] + lm[12]) / 2
+            tip = (lm[THUMB_TIP] + lm[8 if st.pinch == "draw" else 12]) / 2
             p = (int(tip[0]), int(tip[1]))
             if st.pinch == "draw":
                 cv2.circle(out, p, DRAW_WIDTH // 2 + 3, (255, 255, 255), 1, cv2.LINE_AA)
@@ -696,7 +703,7 @@ class FogWindow:
         side = "right" if self.sticker_hand == "Right" else "left"
         line1 = (f"breathe to fog  \u00b7  {side} hand: fist to wipe, thumb to a finger for a sticker"
                  "  \u00b7  N for more")
-        line2 = "other hand: point at the screen to write  \u00b7  thumb + middle moves a sticker (closer = bigger)  \u00b7  thumb + ring: face filter"
+        line2 = "other hand: sideways + pinch to write  \u00b7  thumb + middle moves a sticker (closer = bigger)  \u00b7  thumb + ring: face filter"
         line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   N stickers   \u00b7   E filter   \u00b7   V camera   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
