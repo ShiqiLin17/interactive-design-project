@@ -215,5 +215,26 @@ STICKERS = {
 }
 
 
-def build_all():
-    return {name: fn() for name, fn in STICKERS.items()}
+def make_clear(img, opacity=0.55):
+    """Turn an ornament into a clear window cling: see-through body, glossy bright edge, soft sheen."""
+    a = img[..., 3].astype(np.float32) / 255
+    rgb = img[..., :3].astype(np.float32)
+    inner = cv2.erode(a, np.ones((5, 5), np.uint8))
+    edge = np.clip(a - inner, 0, 1)
+    edge = cv2.GaussianBlur(edge, (0, 0), 0.8)
+    h, w = a.shape
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    band = np.exp(-(((xx + yy) - (w + h) * 0.38) / (w * 0.09)) ** 2)    # diagonal gloss streak
+    rgb = rgb + (edge * 120 + band * a * 55)[..., None]
+    alpha = np.clip(a * opacity + edge * 0.45 + band * a * 0.18, 0, 1)
+    out = np.zeros_like(img)
+    out[..., :3] = np.clip(rgb, 0, 255)
+    out[..., 3] = np.clip(alpha * 255, 0, 255)
+    return out
+
+
+def build_all(clear=True, opacity=0.55):
+    imgs = {name: fn() for name, fn in STICKERS.items()}
+    if clear:
+        imgs = {k: make_clear(v, opacity) for k, v in imgs.items()}
+    return imgs

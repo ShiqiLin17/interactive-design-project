@@ -34,6 +34,7 @@ STICKER_SIZE = 150           # on-screen sticker size in pixels
 PINCH_ON = 0.32              # fingertip distance (relative to hand size) to start a pinch
 PINCH_OFF = 0.48             # ...and to release it
 SPAWN_COOLDOWN = 0.45        # seconds between stickers
+STICKER_OPACITY = 0.55        # 1.0 = solid, lower = more see-through (clear window-cling look)
 MINI_SIZE = 46               # size of the little stickers shown on your fingertips
 DRAW_WIDTH = 22              # thickness of the line when you draw in the fog
 ZOOM_MIN, ZOOM_MAX = 0.4, 3.5
@@ -297,7 +298,7 @@ class Sticker:
 
     def draw(self, frame, now):
         img = rotate_scale(self.base, self.angle, self.scale(now) * self.base_scale * self.zoom)
-        paste(frame, img, self.x, self.y, shadow=0.45 if self.held else 0.3,
+        paste(frame, img, self.x, self.y, shadow=0.18 if self.held else 0.06,
               lift=10 if self.held else 0)
 
 
@@ -337,7 +338,7 @@ class FogWindow:
         self.blowing = False
         self.show_help = True
         self.help_since = None
-        self.sticker_imgs = build_all()
+        self.sticker_imgs = build_all(clear=True, opacity=STICKER_OPACITY)
         self.stickers = []
         # mini stickers that ride on your fingertips so you know which finger makes what
         self.mini = {k: cv2.resize(img, None, fx=MINI_SIZE / img.shape[1], fy=MINI_SIZE / img.shape[1],
