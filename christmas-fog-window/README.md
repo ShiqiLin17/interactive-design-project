@@ -69,7 +69,7 @@ The first run downloads two small MediaPipe models (hand + face tracking) into t
 ## Troubleshooting
 
 - **Black screen or "Couldn't open the camera" on Mac:** go to System Settings → Privacy & Security → Camera and turn on access for Terminal (or VS Code). Then restart Terminal.
-- **Wrong camera (e.g. it uses your iPhone):** press **V** in the app to switch cameras, or start it with `python main.py 1`. To stop your Mac from picking the iPhone at all: on the iPhone, go to Settings → General → AirPlay & Continuity and turn off Continuity Camera.
+- **Wrong camera (e.g. it uses your iPhone):** press **V** until you see yourself from the laptop camera. The app remembers that choice for next time. It also tries to pick the built-in FaceTime camera on its own the first time. To stop your Mac from ever using the iPhone as a webcam: on the iPhone, go to Settings → General → AirPlay & Continuity and turn off Continuity Camera.
 - **`pip` can't find mediapipe:** your Python version is probably too new. Use Python 3.10–3.12, for example `python3.12 -m venv .venv`.
 - **Fog triggers when you're just talking:** raise `MOUTH_OPEN` at the top of `main.py` (try `0.07`).
 - **Want the fog to slowly come back after wiping:** set `FOG_REGROW_SECONDS = 25`.

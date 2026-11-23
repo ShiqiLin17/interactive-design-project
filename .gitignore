@@ -1,6 +1,7 @@
 *.pyc
 *.task
 .DS_Store
+.camera
 .env
 .venv/
 __pycache__/

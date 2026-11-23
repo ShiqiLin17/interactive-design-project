@@ -27,7 +27,7 @@ from facefx import FaceFX
 import text
 
 # ---------------------------------------------------------------- settings
-CAMERA_INDEX = 0             # which camera to use (press V in the app to switch, or run: python main.py 1)
+CAMERA_INDEX = None          # None = remember your last choice (press V to switch), or prefer the built-in laptop camera
 WIDTH, HEIGHT = 1280, 720
 FOG_REGROW_SECONDS = 0       # 0 = fog only comes from your breath; e.g. 25 = slowly fogs back up
 BREATH_FOG_SECONDS = 1.8     # how long you blow to fog up the whole mirror
@@ -692,6 +692,40 @@ def is_o_mouth(roundness, scores):
     return roundness > O_ROUNDNESS
 
 
+CAMERA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".camera")
+
+
+def save_camera(index):
+    try:
+        with open(CAMERA_FILE, "w") as f:
+            f.write(str(index))
+    except OSError:
+        pass
+
+
+def pick_camera():
+    """Your last choice if there is one; otherwise, on a Mac, the built-in FaceTime camera (not the iPhone)."""
+    try:
+        with open(CAMERA_FILE) as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        pass
+    if sys.platform == "darwin":
+        try:
+            import json as _json
+            import subprocess
+            info = subprocess.run(["system_profiler", "SPCameraDataType", "-json"], capture_output=True,
+                                  text=True, timeout=8).stdout
+            names = [c.get("_name", "") for c in _json.loads(info).get("SPCameraDataType", [])]
+            for i, name in enumerate(names):
+                if any(k in name.lower() for k in ("facetime", "built-in", "macbook")):
+                    print(f"Using the laptop camera: {name} (press V to switch)")
+                    return i
+        except Exception:
+            pass
+    return 0
+
+
 def open_camera(index):
     cap = cv2.VideoCapture(index)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
@@ -723,7 +757,12 @@ def main():
     )
     landmarker = vision.HandLandmarker.create_from_options(options)
 
-    cam_index = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else CAMERA_INDEX
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        cam_index = int(sys.argv[1])
+    elif CAMERA_INDEX is not None:
+        cam_index = CAMERA_INDEX
+    else:
+        cam_index = pick_camera()
     cap = open_camera(cam_index)
     ok, frame = cap.read()
     if not ok:
@@ -822,7 +861,8 @@ def main():
                     cap.release()
                     cap, cam_index = c2, nxt
                     cam_label_at = time.time()
-                    print(f"Using camera {cam_index}")
+                    save_camera(cam_index)
+                    print(f"Using camera {cam_index} (remembered for next time)")
                     break
                 c2.release()
         elif key == ord("n"):
