@@ -2,7 +2,7 @@
 
 Your face:     open your mouth and blow at the mirror to fog it up
 Sticker hand:  touch your thumb to a finger to pop out a sticker
-               index = tree, middle = snowman, ring = gift, pinky = candy cane
+               index = glass ornament, middle = snowflake, ring = gold star, pinky = holly
 Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger)
 Either hand:   open palm wipes the fog away
 
@@ -37,6 +37,7 @@ SPAWN_COOLDOWN = 0.45        # seconds between stickers
 MINI_SIZE = 46               # size of the little stickers shown on your fingertips
 DRAW_WIDTH = 22              # thickness of the line when you draw in the fog
 ZOOM_MIN, ZOOM_MAX = 0.4, 3.5
+HELP_SECONDS = 12            # the help text fades away after this long (press H to show it again)
 WIPE_PAUSE_AFTER_DRAW = 1.5  # seconds after drawing before an open palm wipes again
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -47,7 +48,7 @@ MODELS = {
                             "face_landmarker/float16/latest/face_landmarker.task",
 }
 
-FINGER_TIPS = {"tree": 8, "snowman": 12, "gift": 16, "candy cane": 20}
+FINGER_TIPS = {"bauble": 8, "snowflake": 12, "star": 16, "holly": 20}
 THUMB_TIP = 4
 
 
@@ -92,11 +93,11 @@ def rotate_scale(img, angle, scale):
                           borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
 
 
-def paste(frame, rgba, cx, cy, shadow=0.0, lift=0):
+def paste(frame, rgba, cx, cy, shadow=0.0, lift=0, opacity=1.0):
     """Alpha-blend an RGBA image onto frame, centered at (cx, cy)."""
     h, w = rgba.shape[:2]
     H, W = frame.shape[:2]
-    alpha = rgba[..., 3].astype(np.float32) / 255
+    alpha = rgba[..., 3].astype(np.float32) / 255 * opacity
 
     def blend(color, a, ox, oy):
         x0, y0 = int(cx - w / 2 + ox), int(cy - h / 2 + oy)
@@ -116,28 +117,28 @@ def paste(frame, rgba, cx, cy, shadow=0.0, lift=0):
 
 
 def draw_badge(out, pos, icon, scale=1.0, active=False):
-    """Little round icon on a fingertip: a 4-way arrow (move) or a pencil (draw)."""
-    r = int(15 * scale)
+    """Minimal fingertip icon: a thin ring with a tiny pen (write) or 4-way arrow (move)."""
+    r = int(14 * scale)
     c = (int(pos[0]), int(pos[1]))
-    cv2.circle(out, (c[0] + 1, c[1] + 3), r, (40, 40, 40), -1, cv2.LINE_AA)
-    cv2.circle(out, c, r, (120, 215, 140) if active else (252, 250, 248), -1, cv2.LINE_AA)
-    ink = (255, 255, 255) if active else (70, 62, 58)
-    k = r * 0.55
+    ink = (170, 225, 255) if active else (255, 255, 255)
+    layer = out.copy()
+    cv2.circle(layer, c, r, (30, 25, 20), -1, cv2.LINE_AA)
+    cv2.addWeighted(layer, 0.25, out, 0.75, 0, out)          # faint smoky disc behind the icon
+    cv2.circle(out, c, r, ink, 1, cv2.LINE_AA)
+    k = r * 0.5
     if icon == "move":
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             tip = (int(c[0] + dx * k), int(c[1] + dy * k))
-            cv2.line(out, c, tip, ink, 2, cv2.LINE_AA)
+            cv2.line(out, c, tip, ink, 1, cv2.LINE_AA)
             px, py = -dy, dx
             for s in (1, -1):
-                cv2.line(out, tip, (int(tip[0] - dx * k * 0.4 + px * s * k * 0.35),
-                                    int(tip[1] - dy * k * 0.4 + py * s * k * 0.35)), ink, 2, cv2.LINE_AA)
+                cv2.line(out, tip, (int(tip[0] - dx * k * 0.4 + px * s * k * 0.3),
+                                    int(tip[1] - dy * k * 0.4 + py * s * k * 0.3)), ink, 1, cv2.LINE_AA)
     else:
         a = (int(c[0] - k * 0.8), int(c[1] + k * 0.8))
         b = (int(c[0] + k * 0.8), int(c[1] - k * 0.8))
-        cv2.line(out, a, b, ink, max(2, int(r * 0.28)), cv2.LINE_AA)
-        cv2.circle(out, a, 2, ink, -1, cv2.LINE_AA)
-        cv2.line(out, (int(b[0] - k * 0.35), int(b[1] - k * 0.05)), (int(b[0] + k * 0.05), int(b[1] + k * 0.35)),
-                 (252, 250, 248) if not active else (120, 215, 140), 2, cv2.LINE_AA)
+        cv2.line(out, a, b, ink, 2, cv2.LINE_AA)
+        cv2.circle(out, a, 1, ink, -1, cv2.LINE_AA)
 
 
 # ---------------------------------------------------------------- fog
@@ -249,7 +250,7 @@ class Sparkles:
         for _ in range(n):
             a = random.uniform(0, 6.28)
             v = random.uniform(120, 340)
-            col = random.choice([(80, 215, 255), (255, 255, 255), (120, 120, 255), (140, 230, 140)])
+            col = random.choice([(120, 215, 250), (200, 240, 255), (255, 255, 255)])
             self.p.append([x, y, math.cos(a) * v, math.sin(a) * v, 0.6, col])
 
     def update_draw(self, frame, dt):
@@ -335,6 +336,7 @@ class FogWindow:
         self.breath_time = 0.0
         self.blowing = False
         self.show_help = True
+        self.help_since = None
         self.sticker_imgs = build_all()
         self.stickers = []
         # mini stickers that ride on your fingertips so you know which finger makes what
@@ -492,10 +494,9 @@ class FogWindow:
         if self.grabbed:
             hot = self._in_trash(self.grabbed.x, self.grabbed.y)
             c = self._trash_pos()
-            ring = (90, 90, 255) if hot else (255, 255, 255)
-            cv2.circle(out, c, 48, ring, 2, cv2.LINE_AA)
-            cv2.circle(out, c, 44, ring, 1, cv2.LINE_AA)
-            label = text.render("drop to remove", 15, (255, 255, 255))
+            ring = (120, 140, 255) if hot else (255, 255, 255)
+            cv2.circle(out, c, 52, ring, 1, cv2.LINE_AA)
+            label = text.render("drop to remove", 22, (255, 255, 255), "script", 0.7)
             if label is not None:
                 paste(out, label, c[0], c[1])
         for label, _ in hands:
@@ -532,20 +533,19 @@ class FogWindow:
                 continue
             lm = st.smooth
             stick = label == self.sticker_hand
-            accent = (90, 90, 235) if stick else (120, 215, 140)
             tip = (lm[THUMB_TIP] + lm[8 if st.pinch == "draw" else 12]) / 2
             p = (int(tip[0]), int(tip[1]))
             if st.pinch == "draw":
                 cv2.circle(out, p, DRAW_WIDTH // 2 + 3, (255, 255, 255), 1, cv2.LINE_AA)
             elif st.pinch:
-                cv2.circle(out, p, 12, accent, -1, cv2.LINE_AA)
-                cv2.circle(out, p, 12, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.circle(out, p, 11, (170, 225, 255), 1, cv2.LINE_AA)
+                cv2.circle(out, p, 3, (170, 225, 255), -1, cv2.LINE_AA)
             else:
-                cv2.circle(out, p, 9, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.circle(out, p, 7, (255, 255, 255), 1, cv2.LINE_AA)
             if self.show_help:
-                tag = text.render("stickers" if stick else "draw  \u00b7  move", 17, (255, 255, 255))
+                tag = text.render("ornaments" if stick else "write  \u00b7  move", 24, (255, 255, 255), "script", 0.7)
                 if self.grabbed is not None and not stick and st.pinch == "grab":
-                    tag = text.render("closer = bigger  \u00b7  farther = smaller", 17, (255, 255, 255))
+                    tag = text.render("closer for bigger, farther for smaller", 24, (255, 255, 255), "script", 0.7)
                 if tag is not None:
                     w0 = lm[0]
                     paste(out, tag, int(w0[0]), int(w0[1] + 34))
@@ -555,17 +555,23 @@ class FogWindow:
     def _hud(self, out):
         if not self.show_help:
             return
+        if self.help_since is None:
+            self.help_since = time.time()
+        fade = 1 - np.clip((time.time() - self.help_since - HELP_SECONDS) / 1.5, 0, 1)
+        if fade <= 0:
+            return
         gx1, gy1, gx2, gy2 = self.window.glass
         side = "right" if self.sticker_hand == "Right" else "left"
-        line1 = (f"blow to fog  \u00b7  open palm wipes  \u00b7  {side} hand: thumb + index tree, middle snowman, "
-                 "ring gift, pinky candy cane")
-        line2 = "other hand: thumb + index writes in the fog  \u00b7  thumb + middle grabs a sticker (move closer to zoom)"
-        line3 = "S swap hands    R fog    W clear fog    Z undo    C clear    P photo    H hide help    Q quit"
-        y = self.h - 58
+        line1 = (f"blow to fog  \u00b7  open palm to wipe  \u00b7  {side} hand: index ornament, middle snowflake, "
+                 "ring star, pinky holly")
+        line2 = "other hand: index writes in the fog  \u00b7  middle holds an ornament, closer to enlarge"
+        line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   H hide   \u00b7   Q quit"
+        y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
-            img = text.render(line, 14 if i < 2 else 12, (255, 246, 230) if i < 2 else (225, 210, 190), "sans", 0.9)
+            img = text.render(line, 21 if i < 2 else 17, (255, 248, 238) if i < 2 else (235, 225, 210),
+                              "script" if i < 2 else "sans", 0.9)
             if img is not None:
-                paste(out, img, self.w // 2, y + i * 19)
+                paste(out, img, self.w // 2, y + i * 25, opacity=fade)
 
 
 # ---------------------------------------------------------------- main loop
@@ -665,7 +671,8 @@ def main():
             cv2.imwrite(path, out)
             print("Saved", path)
         elif key == ord("h"):
-            app.show_help = not app.show_help
+            app.show_help = True
+            app.help_since = time.time()
         elif key == ord("f"):
             fullscreen = not fullscreen
             cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN,

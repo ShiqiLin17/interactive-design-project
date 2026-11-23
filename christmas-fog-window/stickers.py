@@ -1,153 +1,219 @@
-"""Christmas stickers, drawn with code (no image files needed).
+"""Elegant, realistic Christmas ornaments, rendered with light and shading in code (no image files).
 
-Each sticker is an RGBA image with a white die-cut border, like a real sticker.
+Each one is drawn at 2x size with lighting, then scaled down for smooth edges.
+Returns BGRA images with soft transparent edges (no outlines).
 """
 import cv2
 import numpy as np
 
-SIZE = 200          # drawing canvas (pixels)
-BORDER = 9          # white sticker border thickness
-
-# BGR + alpha
-RED = (40, 40, 210, 255)
-DARK_RED = (30, 25, 150, 255)
-GREEN = (60, 140, 40, 255)
-DARK_GREEN = (40, 95, 25, 255)
-GOLD = (40, 190, 245, 255)
-WHITE = (255, 255, 255, 255)
-SNOW = (250, 245, 240, 255)
-SHADE = (225, 215, 205, 255)
-BLACK = (35, 30, 30, 255)
-BROWN = (40, 70, 115, 255)
-ORANGE = (30, 130, 250, 255)
-
-AA = cv2.LINE_AA
+S = 2                 # supersampling
+SIZE = 220 * S        # canvas
+L = np.array([-0.45, -0.6, 0.66], np.float32)
+L /= np.linalg.norm(L)
+HV = L + np.array([0, 0, 1], np.float32)
+HV /= np.linalg.norm(HV)
 
 
-def _canvas():
-    return np.zeros((SIZE, SIZE, 4), np.uint8)
+def _grid():
+    y, x = np.mgrid[0:SIZE, 0:SIZE].astype(np.float32)
+    return x, y
 
 
-def _poly(img, pts, color):
-    cv2.fillPoly(img, [np.array(pts, np.int32)], color, AA)
+def _finish(rgb, alpha):
+    """Combine float BGR (0..255) + alpha (0..1) at 2x, downsample to final BGRA."""
+    out = np.zeros((SIZE, SIZE, 4), np.float32)
+    out[..., :3] = np.clip(rgb, 0, 255) * alpha[..., None]   # premultiplied for clean downsampling
+    out[..., 3] = np.clip(alpha, 0, 1)
+    out = cv2.resize(out, (SIZE // S, SIZE // S), interpolation=cv2.INTER_AREA)
+    a = out[..., 3:]
+    out[..., :3] = out[..., :3] / np.maximum(a, 1e-4)
+    res = np.zeros(out.shape, np.uint8)
+    res[..., :3] = np.clip(out[..., :3], 0, 255)
+    res[..., 3] = np.clip(out[..., 3] * 255, 0, 255)
+    return res
 
 
-def _circle(img, c, r, color, thickness=-1):
-    cv2.circle(img, (int(c[0]), int(c[1])), int(r), color, thickness, AA)
+def _sphere(x, y, cx, cy, R, base, gloss=1.0):
+    """Shaded glossy sphere. Returns (rgb, alpha)."""
+    nx, ny = (x - cx) / R, (y - cy) / R
+    r2 = nx * nx + ny * ny
+    inside = r2 < 1
+    nz = np.sqrt(np.clip(1 - r2, 0, 1))
+    diff = np.clip(nx * L[0] + ny * L[1] + nz * L[2], 0, 1)
+    spec = np.clip(nx * HV[0] + ny * HV[1] + nz * HV[2], 0, 1)
+    fres = (1 - nz) ** 2.5
+    base = np.array(base, np.float32)
+    rgb = base * (0.18 + 0.95 * diff[..., None])
+    rgb += fres[..., None] * np.float32([235, 205, 180]) * 0.35            # cool sky reflection on the rim
+    warm = np.clip((nx * 0.6 + ny * 0.8), 0, 1) ** 3 * (1 - nz) * 1.4        # warm firelight from bottom right
+    rgb += warm[..., None] * np.float32([60, 150, 255]) * 0.55
+    rgb += (spec ** 90)[..., None] * 255 * gloss
+    # soft window-shaped reflection near the top left
+    wx, wy = (nx + 0.38) / 0.2, (ny + 0.42) / 0.27
+    win = np.clip(1 - (np.abs(wx) ** 4 + np.abs(wy) ** 4), 0, 1) ** 0.6
+    rgb += win[..., None] * 255 * 0.55 * gloss
+    edge = np.clip((1 - np.sqrt(r2)) * R / 1.5, 0, 1)
+    return rgb, edge * inside
 
 
-def draw_tree():
-    img = _canvas()
-    cv2.rectangle(img, (88, 150), (112, 182), BROWN, -1)
-    _poly(img, [(100, 60), (40, 160), (160, 160)], DARK_GREEN)
-    _poly(img, [(100, 42), (52, 120), (148, 120)], GREEN)
-    _poly(img, [(100, 26), (64, 82), (136, 82)], GREEN)
-    # garland
-    cv2.line(img, (66, 104), (132, 88), GOLD, 4, AA)
-    cv2.line(img, (56, 142), (142, 122), GOLD, 4, AA)
-    # ornaments
-    for (x, y), col in [((80, 96), RED), ((118, 70), GOLD), ((124, 112), RED),
-                        ((72, 136), GOLD), ((108, 140), RED), ((140, 150), GOLD),
-                        ((96, 112), (200, 120, 60, 255))]:
-        _circle(img, (x, y), 6, col)
-        _circle(img, (x - 2, y - 2), 2, WHITE)
-    # star
-    star = []
+def bauble():
+    x, y = _grid()
+    cx, cy, R = SIZE / 2, SIZE * 0.56, SIZE * 0.36
+    rgb, a = _sphere(x, y, cx, cy, R, (38, 22, 150))   # deep crimson glass
+    # brushed-gold cap
+    cw, ch = R * 0.36, R * 0.24
+    x1, x2, y1, y2 = cx - cw / 2, cx + cw / 2, cy - R - ch * 0.55, cy - R + ch * 0.55
+    capm = ((x >= x1) & (x <= x2) & (y >= y1) & (y <= y2)).astype(np.float32)
+    u = np.clip((x - x1) / max(cw, 1), 0, 1)
+    gold = np.float32([50, 160, 215])
+    shade = 0.55 + 0.6 * np.clip(np.sin(u * np.pi), 0, 1) ** 0.7 + 0.12 * np.sin(u * 60)
+    caprgb = gold[None, None, :] * shade[..., None] + (np.abs(u - 0.32) < 0.06)[..., None] * 80
+    for k in range(4):  # little ridges
+        yy = y1 + (y2 - y1) * (k + 0.5) / 4
+        capm_r = (np.abs(y - yy) < 1.2 * S) & (capm > 0)
+        caprgb[capm_r] *= 0.75
+    rgb = np.where(capm[..., None] > 0, caprgb, rgb)
+    a = np.maximum(a, capm)
+    # wire loop
+    loop = np.zeros((SIZE, SIZE), np.float32)
+    cv2.ellipse(loop, (int(cx), int(y1 - 9 * S)), (int(7 * S), int(9 * S)), 0, 0, 360, 1.0, int(2.2 * S), cv2.LINE_AA)
+    rgb = rgb * (1 - loop[..., None]) + np.float32([90, 190, 235]) * loop[..., None]
+    a = np.maximum(a, loop)
+    return _finish(rgb, a)
+
+
+def snowflake():
+    canvas = np.zeros((SIZE, SIZE), np.float32)
+    c = np.array([SIZE / 2, SIZE / 2])
+    Rm = SIZE * 0.44
+
+    def seg(p, q, th):
+        cv2.line(canvas, (int(p[0]), int(p[1])), (int(q[0]), int(q[1])), 1.0, max(1, int(th)), cv2.LINE_AA)
+
+    for i in range(6):
+        a = i * np.pi / 3 - np.pi / 2
+        d = np.array([np.cos(a), np.sin(a)])
+        seg(c, c + d * Rm, 5 * S)
+        for t, ln, th in ((0.3, 0.22, 3.6), (0.52, 0.27, 3.2), (0.72, 0.2, 2.8), (0.88, 0.1, 2.2)):
+            b = c + d * Rm * t
+            for s in (-1, 1):
+                a2 = a + s * np.pi / 3
+                seg(b, b + np.array([np.cos(a2), np.sin(a2)]) * Rm * ln, th * S)
+        tip = c + d * Rm
+        cv2.circle(canvas, (int(tip[0]), int(tip[1])), int(3.5 * S), 1.0, -1, cv2.LINE_AA)
+    hexa = [c + np.array([np.cos(i * np.pi / 3), np.sin(i * np.pi / 3)]) * Rm * 0.14 for i in range(6)]
+    cv2.polylines(canvas, [np.array(hexa, np.int32)], True, 1.0, int(2.5 * S), cv2.LINE_AA)
+    cv2.circle(canvas, (int(c[0]), int(c[1])), int(5 * S), 1.0, -1, cv2.LINE_AA)
+    # bevelled ice: height from blurred shape -> lighting
+    hgt = cv2.GaussianBlur(canvas, (0, 0), 2.2 * S)
+    gx = cv2.Sobel(hgt, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(hgt, cv2.CV_32F, 0, 1, ksize=3)
+    n = np.dstack([-gx, -gy, np.full_like(gx, 0.35)])
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    diff = np.clip(n @ L, 0, 1)
+    spec = np.clip(n @ HV, 0, 1) ** 40
+    base = np.float32([250, 238, 222])                   # frosty silver-white with a hint of blue
+    rgb = base * (0.62 + 0.42 * diff[..., None]) + spec[..., None] * 140
+    rng = np.random.default_rng(3)
+    glint = (rng.random((SIZE, SIZE)) > 0.996) * canvas
+    rgb += cv2.GaussianBlur(glint.astype(np.float32), (0, 0), 0.8)[..., None] * 600
+    halo = cv2.GaussianBlur(canvas, (0, 0), 6 * S) * 0.25
+    alpha = np.maximum(canvas, halo)
+    return _finish(rgb, alpha)
+
+
+def star():
+    rgb = np.zeros((SIZE, SIZE, 3), np.float32)
+    alpha = np.zeros((SIZE, SIZE), np.float32)
+    c = np.array([SIZE / 2, SIZE / 2 + 6 * S])
+    Ro, Ri = SIZE * 0.44, SIZE * 0.19
+    pts = []
     for i in range(10):
-        r = 17 if i % 2 == 0 else 7
+        r = Ro if i % 2 == 0 else Ri
         a = -np.pi / 2 + i * np.pi / 5
-        star.append((100 + r * np.cos(a), 24 + r * np.sin(a)))
-    _poly(img, star, GOLD)
-    return img
+        pts.append(c + np.array([np.cos(a), np.sin(a)]) * r)
+    light = np.array([-0.5, -0.8])
+    for i in range(10):  # each arm = two facets, lit by how they face the light
+        p, q = pts[i], pts[(i + 1) % 10]
+        mid = (p + q) / 2 - c
+        k = 0.5 + 0.5 * np.dot(mid / (np.linalg.norm(mid) + 1e-6), light)
+        col = np.float32([30, 120, 190]) + np.float32([110, 120, 65]) * k
+        m = np.zeros((SIZE, SIZE), np.float32)
+        cv2.fillPoly(m, [np.array([c, p, q], np.int32)], 1.0, cv2.LINE_AA)
+        # gentle gradient toward the tip
+        rgb = rgb * (1 - m[..., None]) + col * m[..., None]
+        alpha = np.maximum(alpha, m)
+    x, y = _grid()
+    d = np.sqrt((x - c[0]) ** 2 + (y - c[1]) ** 2) / Ro
+    rgb *= (1.08 - 0.25 * d)[..., None]
+    for p in pts[::2]:  # bright ridge lines from center to tips
+        line = np.zeros((SIZE, SIZE), np.float32)
+        cv2.line(line, (int(c[0]), int(c[1])), (int(p[0]), int(p[1])), 1.0, int(1.4 * S), cv2.LINE_AA)
+        rgb += line[..., None] * np.float32([120, 200, 235]) * 0.45
+    glint = np.zeros((SIZE, SIZE), np.float32)
+    g = pts[8] * 0.55 + c * 0.45
+    cv2.circle(glint, (int(g[0]), int(g[1])), int(3 * S), 1.0, -1, cv2.LINE_AA)
+    glint = cv2.GaussianBlur(glint, (0, 0), 3 * S)
+    rgb += glint[..., None] * 400
+    return _finish(rgb, alpha)
 
 
-def draw_snowman():
-    img = _canvas()
-    _circle(img, (100, 145), 42, SNOW)
-    _circle(img, (100, 90), 32, SNOW)
-    _circle(img, (100, 145), 42, SHADE, 2)
-    _circle(img, (100, 90), 32, SHADE, 2)
-    # hat
-    cv2.rectangle(img, (70, 56), (130, 64), BLACK, -1)
-    cv2.rectangle(img, (80, 18), (120, 58), BLACK, -1)
-    cv2.rectangle(img, (80, 46), (120, 54), RED, -1)
-    # face
-    _circle(img, (89, 84), 4, BLACK)
-    _circle(img, (111, 84), 4, BLACK)
-    _poly(img, [(100, 92), (100, 100), (128, 97)], ORANGE)
-    for i, x in enumerate(range(86, 116, 7)):
-        _circle(img, (x, 107 + (2 if i in (1, 2, 3) else 0)), 2, BLACK)
-    # scarf
-    cv2.ellipse(img, (100, 118), (30, 8), 0, 0, 360, RED, -1, AA)
-    cv2.rectangle(img, (110, 118), (124, 150), RED, -1)
-    cv2.line(img, (110, 132), (124, 132), DARK_RED, 3, AA)
-    # buttons
-    for y in (135, 152, 169):
-        _circle(img, (100, y), 4, BLACK)
-    return img
+def holly():
+    rgb = np.zeros((SIZE, SIZE, 3), np.float32)
+    alpha = np.zeros((SIZE, SIZE), np.float32)
+    x, y = _grid()
+
+    def leaf(cx, cy, length, width, angle):
+        nonlocal rgb, alpha
+        pts = []
+        n = 7
+        for i in range(n * 2 + 1):  # spiky holly outline
+            t = i / (n * 2)
+            along = (t - 0.5) * length
+            w = width * np.sin(np.pi * t) ** 0.8
+            w *= 1.18 if i % 2 == 0 else 0.82
+            pts.append((along, -w))
+        for i in range(n * 2, -1, -1):
+            t = i / (n * 2)
+            along = (t - 0.5) * length
+            w = width * np.sin(np.pi * t) ** 0.8
+            w *= 1.18 if i % 2 == 0 else 0.82
+            pts.append((along, w))
+        ca, sa = np.cos(angle), np.sin(angle)
+        poly = np.array([(cx + px * ca - py * sa, cy + px * sa + py * ca) for px, py in pts], np.int32)
+        m = np.zeros((SIZE, SIZE), np.float32)
+        cv2.fillPoly(m, [poly], 1.0, cv2.LINE_AA)
+        # leaf lighting: each half tilts a different way, glossy sheen along the middle
+        u = (x - cx) * ca + (y - cy) * sa
+        v = -(x - cx) * sa + (y - cy) * ca
+        side = np.tanh(v / (width * 0.5))
+        k = 0.55 + 0.35 * side * np.sign(-sa + 0.2) + 0.15 * (1 - np.abs(u) / (length / 2))
+        col = np.float32([40, 88, 22]) * np.clip(k, 0.3, 1.3)[..., None]
+        sheen = np.exp(-((v + width * 0.25) / (width * 0.25)) ** 2) * (np.abs(u) < length * 0.45)
+        col += sheen[..., None] * np.float32([150, 190, 150]) * 0.35
+        vein = (np.abs(v) < 1.2 * S) & (np.abs(u) < length * 0.48)
+        col[vein] = col[vein] * 0.6 + np.float32([90, 150, 110]) * 0.4
+        rgb = rgb * (1 - m[..., None]) + col * m[..., None]
+        alpha = np.maximum(alpha, m)
+
+    leaf(SIZE * 0.36, SIZE * 0.42, SIZE * 0.56, SIZE * 0.13, np.radians(-35))
+    leaf(SIZE * 0.64, SIZE * 0.43, SIZE * 0.56, SIZE * 0.13, np.radians(35))
+    leaf(SIZE * 0.5, SIZE * 0.66, SIZE * 0.46, SIZE * 0.11, np.radians(92))
+    for (bx, by) in ((0.44, 0.52), (0.56, 0.53), (0.5, 0.42)):
+        b, a = _sphere(x, y, SIZE * bx, SIZE * by, SIZE * 0.075, (30, 25, 175), gloss=0.9)
+        rgb = rgb * (1 - a[..., None]) + b * a[..., None]
+        alpha = np.maximum(alpha, a)
+    return _finish(rgb, alpha)
 
 
-def draw_gift():
-    img = _canvas()
-    cv2.rectangle(img, (40, 90), (160, 180), RED, -1)
-    cv2.rectangle(img, (32, 70), (168, 96), DARK_RED, -1)
-    cv2.rectangle(img, (90, 70), (110, 180), GOLD, -1)
-    cv2.rectangle(img, (40, 128), (160, 140), GOLD, -1)
-    # bow
-    cv2.ellipse(img, (78, 58), (24, 14), -20, 0, 360, GOLD, -1, AA)
-    cv2.ellipse(img, (122, 58), (24, 14), 20, 0, 360, GOLD, -1, AA)
-    cv2.ellipse(img, (78, 58), (12, 6), -20, 0, 360, (20, 140, 200, 255), -1, AA)
-    cv2.ellipse(img, (122, 58), (12, 6), 20, 0, 360, (20, 140, 200, 255), -1, AA)
-    _circle(img, (100, 62), 11, GOLD)
-    # polka dots
-    for x, y in [(58, 110), (140, 112), (62, 160), (138, 162)]:
-        _circle(img, (x, y), 5, (90, 90, 235, 255))
-    return img
-
-
-def draw_candy_cane():
-    img = _canvas()
-    mask = np.zeros((SIZE, SIZE), np.uint8)
-    cv2.ellipse(mask, (100, 60), (32, 32), 0, 180, 360, 255, 22, AA)
-    cv2.line(mask, (132, 60), (132, 180), 255, 22, AA)
-    cv2.line(mask, (68, 60), (68, 78), 255, 22, AA)
-    stripes = np.zeros_like(img)
-    stripes[:] = WHITE
-    for k in range(-SIZE, 2 * SIZE, 26):
-        cv2.line(stripes, (k, 0), (k + SIZE, SIZE), RED, 11, AA)
-    img[mask > 0] = stripes[mask > 0]
-    img[..., 3] = mask
-    # small holly bow
-    cv2.ellipse(img, (148, 110), (14, 7), 30, 0, 360, GREEN, -1, AA)
-    cv2.ellipse(img, (118, 110), (14, 7), -30, 0, 360, GREEN, -1, AA)
-    _circle(img, (133, 108), 6, RED)
-    return img
-
-
-def add_border(img, border=BORDER):
-    """Pad and add a white die-cut outline around everything drawn."""
-    pad = border + 6
-    img = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
-    alpha = img[..., 3]
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * border + 1, 2 * border + 1))
-    outline = cv2.dilate(alpha, k)
-    outline = cv2.GaussianBlur(outline, (3, 3), 0)
-    out = np.zeros_like(img)
-    out[..., :3] = 255
-    out[..., 3] = outline
-    a = alpha[..., None].astype(np.float32) / 255
-    out[..., :3] = (img[..., :3] * a + out[..., :3] * (1 - a)).astype(np.uint8)
-    return out
-
-
-# order matters: which finger touches your thumb picks the sticker
+# which finger touches your thumb picks the ornament
 STICKERS = {
-    "tree": draw_tree,        # thumb + index
-    "snowman": draw_snowman,  # thumb + middle
-    "gift": draw_gift,        # thumb + ring
-    "candy cane": draw_candy_cane,  # thumb + pinky
+    "bauble": bauble,        # thumb + index
+    "snowflake": snowflake,  # thumb + middle
+    "star": star,            # thumb + ring
+    "holly": holly,          # thumb + pinky
 }
 
 
 def build_all():
-    return {name: add_border(fn()) for name, fn in STICKERS.items()}
+    return {name: fn() for name, fn in STICKERS.items()}
