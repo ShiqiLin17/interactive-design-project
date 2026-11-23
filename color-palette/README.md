@@ -14,7 +14,7 @@ A Korean-style personal color draping test you can do at home with your webcam. 
    - ring = color 3
    - pinky = color 4
 
-   Touch your thumb to a finger. That color fills everything around your face like a draping cape, and a photo is snapped about a second later.
+   Touch your thumb to a finger, and a photo is snapped about a second later. While it's taken, the area around your face stays neutral grey, so your screen's light on your face is the same for every color. The test color is then added around your face in the photo, so all 4 photos compare fairly, without your skin picking up a glow from the screen.
 3. **Compare.** After all 4 colors, the photos fill the screen side by side. Which one makes your skin glow? The comparison is saved automatically in `results/`.
 4. Press **SPACE** to go back to the start and test another type.
 

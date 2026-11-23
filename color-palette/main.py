@@ -27,6 +27,7 @@ HOLD_TO_PICK = 1.0          # seconds pointing at a card to choose it
 DRAPE_BEFORE_PHOTO = 1.1    # seconds the color shows on you before the photo
 PINCH_ON, PINCH_OFF = 0.32, 0.48
 SWATCH_R = 22               # fingertip swatch size
+NEUTRAL = (150, 150, 150)   # neutral grey shown around your face while photos are taken (BGR)
 
 BG = (238, 242, 246)        # warm off-white (BGR)
 INK = (60, 52, 48)          # soft charcoal (BGR)
@@ -328,7 +329,9 @@ class ColorTest:
                     self.active = None
         out = frame
         if self.active is not None and face is not None:
-            out = self.drape.apply(frame, face, bgr(colors[self.active][1]), amount)
+            # the screen stays NEUTRAL grey while the photo is taken, so the screen's light on your face is the same
+            # for every color; the real color is added to the photo afterwards (fair comparison, no color cast)
+            out = self.drape.apply(frame, face, NEUTRAL, amount)
         else:
             out = frame.copy()
 
@@ -351,6 +354,8 @@ class ColorTest:
             cv2.circle(out, p, 18, (255, 255, 255), 1, cv2.LINE_AA)
             cv2.ellipse(out, p, (18, 18), -90, 0, 360 * min(t, 1), (255, 255, 255), 3, cv2.LINE_AA)
             put_text(out, colors[self.active][0], p[0], p[1] + 36, 18, (255, 255, 255), "sans", 0.8)
+            cv2.circle(out, (p[0], p[1] + 66), 13, (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(out, (p[0], p[1] + 66), 11, bgr(colors[self.active][1]), -1, cv2.LINE_AA)
         if face is None:
             put_text(out, "move into the frame so I can see your face", self.w / 2, self.h * 0.5, 22,
                      (255, 255, 255), "sans", 0.9)
@@ -384,8 +389,10 @@ class ColorTest:
                 thumb = cv2.resize(self.photos[k], (tw, th), interpolation=cv2.INTER_AREA)
                 out[y1:y1 + th, x2 - tw:x2] = thumb
             else:
-                cv2.rectangle(out, (x2 - tw, y1), (x2, y1 + th), bgr(colors[k][1]), -1)
-                put_text(out, colors[k][0], x2 - tw / 2, y1 + th / 2, 13, (255, 255, 255), "sans", 0.7)
+                # neutral slot with just a small dot of the color (big color blocks would tint your face)
+                cv2.rectangle(out, (x2 - tw, y1), (x2, y1 + th), (232, 230, 228), -1)
+                cv2.circle(out, (x2 - tw // 2, y1 + th // 2 - 10), 9, bgr(colors[k][1]), -1, cv2.LINE_AA)
+                put_text(out, colors[k][0], x2 - tw / 2, y1 + th / 2 + 14, 12, MUTED_RGB, "sans")
 
         put_text(out, "SPACE  start over", 24, self.h - 24, 13, (255, 255, 255), "sans", 0.8, anchor="left")
 
