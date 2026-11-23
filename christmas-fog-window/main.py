@@ -6,7 +6,7 @@ Sticker hand:  touch your thumb to a finger to pop out a sticker
 Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger)
 Either hand:   close your hand into a fist and wipe with the pinky side
 
-Keys: S swap hands · R fog all · W wipe all · H help · Z undo · C clear stickers · P screenshot · F fullscreen · Q quit
+Keys: E face filter · S swap hands · R fog all · W wipe all · H help · Z undo · C clear stickers · P screenshot · F fullscreen · Q quit
 """
 import math
 import os
@@ -22,6 +22,7 @@ import numpy as np
 from stickers import build_all
 from window import RealWindow
 from droplets import Droplets
+from facefx import FaceFX
 import text
 
 # ---------------------------------------------------------------- settings
@@ -354,6 +355,8 @@ class FogWindow:
         self.fog = Fog(w, h)
         self.window = RealWindow(w, h)
         self.drops = Droplets(w, h, self.window.warm)
+        self.facefx = FaceFX()
+        self.face_pts = None
         self.sparkles = Sparkles()
         self.puffs = BreathPuffs()
         self.breath_time = 0.0
@@ -509,6 +512,7 @@ class FogWindow:
 
     # --- drawing
     def draw(self, frame, hands, now, dt):
+        frame = self.facefx.apply(frame, self.face_pts, now)    # face filter first, so it sits under the fog
         outside = self.window.outside(frame, now, dt)
         out = self.fog.render(outside, lambda sh: self.window.fog_tint(now, sh))
         out = self.drops.apply(out, outside, self.fog.m_full)
@@ -521,7 +525,7 @@ class FogWindow:
         self.window.draw_frame(out, now)
         if self.fog.coverage() < 0.04 and not self.stickers:
             k = 0.5 + 0.5 * math.sin(now * 2)
-            msg = text.render("blow on the window...", 54, (255, 250, 240), "script", 0.5 + 0.3 * k)
+            msg = text.render("breathe on it...", 58, (255, 250, 240), "script", 0.5 + 0.3 * k)
             if msg is not None:
                 paste(out, msg, self.w // 2, int(self.h * 0.36))
         if self.grabbed:
@@ -582,6 +586,11 @@ class FogWindow:
                 if tag is not None:
                     w0 = lm[0]
                     paste(out, tag, int(w0[0]), int(w0[1] + 34))
+        if now - self.facefx.changed_at < 1.8:   # show the filter name when you switch
+            k = 1 - max(0.0, (now - self.facefx.changed_at - 1.0) / 0.8)
+            label = text.render(self.facefx.name, 40, (255, 250, 242), "script", 0.6)
+            if label is not None:
+                paste(out, label, self.w // 2, int(self.h * 0.12), opacity=k)
         self._hud(out)
         return out
 
@@ -595,10 +604,10 @@ class FogWindow:
             return
         gx1, gy1, gx2, gy2 = self.window.glass
         side = "right" if self.sticker_hand == "Right" else "left"
-        line1 = (f"blow to fog  \u00b7  fist to wipe  \u00b7  {side} hand: index ornament, middle snowflake, "
+        line1 = (f"breathe to fog  \u00b7  fist to wipe  \u00b7  {side} hand: index ornament, middle snowflake, "
                  "ring star, pinky holly")
         line2 = "other hand: index writes in the fog  \u00b7  middle holds a sticker, closer to enlarge"
-        line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   H hide   \u00b7   Q quit"
+        line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   E filter   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
             img = text.render(line, 21 if i < 2 else 17, (255, 248, 238) if i < 2 else (235, 225, 210),
@@ -673,6 +682,9 @@ def main():
             mouth_open = np.linalg.norm(px(13) - px(14)) / face_h  # inner lips gap
             mouth = (px(13) + px(14)) / 2
             face = (mouth[0], mouth[1], mouth_open, np.linalg.norm(px(234) - px(454)))
+            app.face_pts = np.array([[p.x * w, p.y * h] for p in f], np.float32)
+        else:
+            app.face_pts = None
 
         hands = []
         for lms, handed in zip(result.hand_landmarks, result.handedness):
@@ -703,6 +715,8 @@ def main():
             path = os.path.join("screenshots", time.strftime("christmas-fog-window-%Y%m%d-%H%M%S.png"))
             cv2.imwrite(path, out)
             print("Saved", path)
+        elif key == ord("e"):
+            app.facefx.next(now)
         elif key == ord("h"):
             app.show_help = True
             app.help_since = time.time()

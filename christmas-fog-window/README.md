@@ -7,6 +7,8 @@ A realistic winter window: condensation with real-looking water droplets, frost 
 
 ## How to play
 
+When it starts, the glass is clear and it says *breathe on it...*
+
 | Do this | What happens |
 |---|---|
 | 😮 **Open your mouth and blow** at the camera | The window fogs up, spreading out from your mouth |
@@ -23,7 +25,19 @@ The ornament hand is your **right** hand by default. Press **S** to swap. Both h
 
 Tip: after you draw, fist-wiping pauses for a moment so moving your hand between letters doesn't erase them.
 
-**Keys:** `S` swap hands · `R` fog the whole window · `W` clear all fog · `Z` undo · `C` clear stickers · `P` save a photo · `H` show help again (it fades after a few seconds) · `F` fullscreen · `Q` quit
+**Keys:** `E` switch face filter · `S` swap hands · `R` fog the whole window · `W` clear all fog · `Z` undo · `C` clear stickers · `P` save a photo · `H` show help again (it fades after a few seconds) · `F` fullscreen · `Q` quit
+
+## Face filters
+
+Press **E** to switch between subtle winter filters. They follow your face as you move, and they sit under the fog like everything else:
+
+- **natural**: no filter
+- **soft glow** (the default): slightly smoother, brighter, warmer skin. Eyes, brows and lips stay sharp.
+- **rosy cheeks**: a soft cold-weather blush on your cheeks and the tip of your nose
+- **frosted lashes**: tiny ice crystals on your lashes and brows
+- **snow in hair**: twinkling snowflakes resting along your hairline
+- **freckles**: soft freckles across your nose and cheeks, with a little shimmer
+- **winter glam**: all of them together
 
 ## Run it
 
@@ -60,5 +74,6 @@ The first run downloads two small MediaPipe models (hand + face tracking) into t
 - `main.py`: camera loop, fog, gestures, stickers
 - `window.py`: frost, snow, lighting and the world outside
 - `droplets.py`: water droplets and sliding drops
+- `facefx.py`: the face filters
 - `stickers.py`: the ornaments
 - `text.py`: elegant script fonts for the on-screen text
