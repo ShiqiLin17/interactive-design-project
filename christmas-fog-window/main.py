@@ -42,6 +42,7 @@ STICKER_OPACITY = 0.8         # 1.0 = solid, lower = more see-through (clear win
 MINI_SIZE = 46               # size of the little stickers shown on your fingertips
 DRAW_WIDTH = 22              # thickness of the line when you draw in the fog
 ZOOM_MIN, ZOOM_MAX = 0.4, 3.5
+SHOW_BOTTOM_HELP = False     # instruction lines along the bottom (off: cleaner look)
 HELP_SECONDS = 12            # the help text fades away after this long (press H to show it again)
 WIPE_PAUSE_AFTER_DRAW = 1.0  # seconds after drawing before a fist wipes again
 
@@ -681,13 +682,12 @@ class FogWindow:
                     col = (255, 236, 200) if active else (255, 252, 246)    # warm gold when in use
                     label = text.render(word, size_px, col, "script", 0.75)
                     if label is not None:
-                        # the word runs along the finger, just past the fingertip
-                        ang = -math.degrees(math.atan2(d[1], d[0]))
-                        if abs(ang) > 120:                          # never upside down
-                            ang += 180 if ang < 0 else -180
-                        rot = rotate_scale(label, ang, 1.0)
-                        c = lm[tip] + d * (10 + label.shape[1] / 2)
-                        paste(out, rot, int(c[0]), int(c[1]))
+                        # horizontal word just past the fingertip; index/ring words lean outward so they don't overlap
+                        c = lm[tip] + d * (8 + label.shape[0] / 2)
+                        if tip != 12:
+                            side = lm[tip][0] - lm[12][0]
+                            c = c + np.array([math.copysign(label.shape[1] * 0.45, side if side else 1), 0.0])
+                        paste(out, label, int(c[0]), int(c[1]))
                 continue
             for kind, tip in self.finger_tips().items():
                 d = lm[tip] - lm[tip - 1]
@@ -728,7 +728,7 @@ class FogWindow:
         return out
 
     def _hud(self, out):
-        if not self.show_help:
+        if not SHOW_BOTTOM_HELP or not self.show_help:
             return
         if self.help_since is None:
             self.help_since = time.time()
