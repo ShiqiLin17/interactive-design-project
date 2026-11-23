@@ -33,7 +33,7 @@ FOLDS = 0.8             # soften nasolabial folds (法令纹)
 BLEMISH = True          # remove small spots and pimples
 IRIS_ENLARGE = 0.14     # circle-lens effect: slightly bigger, softer irises
 AEGYO_SAL = 1.0         # 卧蚕: soft bright puff under the lower lashes with a gentle shadow below
-LASH_LINE = 1.0         # soft darker lash line (makes the eyes look bigger)
+LASH_LINE = 1.0         # thin, soft lash line on the upper lid (makes the eyes look a bit bigger)
 MAKEUP = True           # natural makeup: blush, lip tint, brows, lash line, brighter under-eyes
 
 # ------------------------------------------------------------------ landmarks
@@ -846,14 +846,12 @@ class FaceFX:
                 roi = roi * (1 + 0.1 * band) + 10 * band * np.float32([1.0, 1.0, 1.05])
                 roi = roi * (1 - 0.08 * shade * np.float32([1.0, 1.02, 0.98]))
 
-            # soft lash line along the upper lid (and a hint at the outer lower lid)
+            # thin, soft lash line along the upper lid
             if LASH_LINE:
                 line = np.zeros((y1 - y0, x1 - x0), np.float32)
                 lid = (pts[upper] - off).astype(np.int32)
-                cv2.polylines(line, [lid], False, 1.0, max(1, int(ew * 0.05)), cv2.LINE_AA)
-                outer_low = (pts[lower][:4] - off).astype(np.int32)
-                cv2.polylines(line, [outer_low], False, 0.5, max(1, int(ew * 0.03)), cv2.LINE_AA)
-                line = cv2.GaussianBlur(line, (0, 0), max(0.8, ew * 0.015))[..., None] * 0.45 * LASH_LINE
+                cv2.polylines(line, [lid], False, 1.0, max(1, int(ew * 0.022)), cv2.LINE_AA)
+                line = cv2.GaussianBlur(line, (0, 0), max(0.6, ew * 0.008))[..., None] * 0.35 * LASH_LINE
                 roi = roi * (1 - line) + np.float32([30, 28, 34]) * line
             out[y0:y1, x0:x1] = np.clip(roi, 0, 255).astype(np.uint8)
 
