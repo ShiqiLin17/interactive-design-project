@@ -1,6 +1,6 @@
 """Christmas Fog Window — fog up the window with your breath, wipe it with your hand, decorate it with stickers.
 
-Your face:     open your mouth and blow at the mirror to fog it up
+Your face:     make an "O" with your lips and blow at the window to fog it up (smiling won't)
 Sticker hand:  touch your thumb to a finger to pop out a sticker
                (each fingertip shows which one)   N = next page of stickers
 Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger);
@@ -32,6 +32,7 @@ WIDTH, HEIGHT = 1280, 720
 FOG_REGROW_SECONDS = 0       # 0 = fog only comes from your breath; e.g. 25 = slowly fogs back up
 BREATH_FOG_SECONDS = 1.8     # how long you blow to fog up the whole mirror
 MOUTH_OPEN = 0.045           # how open your mouth must be to count as blowing (raise if too sensitive)
+O_ROUNDNESS = 0.45           # an "O" is tall for its width (smiles are wide and flat)
 STICKER_SIZE = 150           # on-screen sticker size in pixels
 PINCH_ON = 0.32              # fingertip distance (relative to hand size) to start a pinch
 PINCH_OFF = 0.48             # ...and to release it
@@ -675,6 +676,22 @@ class FogWindow:
                 paste(out, img, self.w // 2, y + i * 25, opacity=fade)
 
 
+def is_o_mouth(roundness, scores):
+    """True when the lips make an "O" like blowing on glass, not a smile.
+
+    roundness = lip gap / mouth width (an O is tall and narrow, a smile is wide and flat).
+    scores = MediaPipe expression scores, when available (funnel/pucker = O-lips, smile = smiling).
+    """
+    smile = max(scores.get("mouthSmileLeft", 0), scores.get("mouthSmileRight", 0))
+    if smile > 0.35:
+        return False
+    if scores:
+        o_lips = max(scores.get("mouthFunnel", 0), scores.get("mouthPucker", 0))
+        if o_lips > 0.25:
+            return True
+    return roundness > O_ROUNDNESS
+
+
 def open_camera(index):
     cap = cv2.VideoCapture(index)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
@@ -694,6 +711,7 @@ def main():
         base_options=mp_python.BaseOptions(model_asset_path=face_model),
         running_mode=vision.RunningMode.VIDEO,
         num_faces=1,
+        output_face_blendshapes=True,     # expression scores (O-mouth vs smile) for breathing
     ))
     options = vision.HandLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=hand_model),
@@ -748,7 +766,14 @@ def main():
             def px(i):
                 return np.array([f[i].x * w, f[i].y * h])
             face_h = np.linalg.norm(px(10) - px(152)) + 1e-6      # forehead to chin
-            mouth_open = np.linalg.norm(px(13) - px(14)) / face_h  # inner lips gap
+            gap = np.linalg.norm(px(13) - px(14))                  # inner lips gap
+            width = np.linalg.norm(px(78) - px(308)) + 1e-6          # inner mouth corners
+            mouth_open = gap / face_h
+            scores = {}
+            if face_result.face_blendshapes:
+                scores = {c.category_name: c.score for c in face_result.face_blendshapes[0]}
+            if not is_o_mouth(gap / width, scores):
+                mouth_open = 0.0                                     # smiling or talking: no fog
             mouth = (px(13) + px(14)) / 2
             face = (mouth[0], mouth[1], mouth_open, np.linalg.norm(px(234) - px(454)))
             app.face_pts = np.array([[p.x * w, p.y * h] for p in f], np.float32)

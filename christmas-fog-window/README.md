@@ -11,7 +11,7 @@ When it starts, the glass is clear and it says *breathe on it...*
 
 | Do this | What happens |
 |---|---|
-| 😮 **Open your mouth and blow** at the camera | The window fogs up, spreading out from your mouth |
+| 😮 **Make an "O" with your lips and blow** at the camera (smiling or talking won't fog it) | The window fogs up, spreading out from your mouth |
 | ✊ **Closed fist** (either hand) | Wipe the fog with the pinky side of your fist, like wiping a real window |
 | 🤏 **Ornament hand:** thumb + **index** (each fingertip shows a mini preview) | A glossy red glass ornament appears |
 | thumb + **middle** | A silver snowflake |
