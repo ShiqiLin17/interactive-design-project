@@ -35,7 +35,7 @@ STICKER_SIZE = 150           # on-screen sticker size in pixels
 PINCH_ON = 0.32              # fingertip distance (relative to hand size) to start a pinch
 PINCH_OFF = 0.48             # ...and to release it
 SPAWN_COOLDOWN = 0.45        # seconds between stickers
-STICKER_OPACITY = 0.55        # 1.0 = solid, lower = more see-through (clear window-cling look)
+STICKER_OPACITY = 0.8         # 1.0 = solid, lower = more see-through (clear window-cling look)
 MINI_SIZE = 46               # size of the little stickers shown on your fingertips
 DRAW_WIDTH = 22              # thickness of the line when you draw in the fog
 ZOOM_MIN, ZOOM_MAX = 0.4, 3.5
