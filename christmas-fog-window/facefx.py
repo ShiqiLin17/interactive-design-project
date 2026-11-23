@@ -32,7 +32,7 @@ DETAIL_KEEP = 0.8       # how much fine skin detail to keep (clearer, not blurry
 FOLDS = 0.8             # soften nasolabial folds (法令纹)
 BLEMISH = True          # remove small spots and pimples
 IRIS_ENLARGE = 0.14     # circle-lens effect: slightly bigger, softer irises
-AEGYO_SAL = 1.0         # 卧蚕: soft bright puff under the lower lashes with a gentle shadow below
+AEGYO_SAL = 0.0         # extra hand-drawn 卧蚕 (off: the learned Douyin makeup map already has her exact aegyo sal)
 LASH_LINE = 1.0         # thin, soft lash line on the upper lid (makes the eyes look a bit bigger)
 MAKEUP = True           # natural makeup: blush, lip tint, brows, lash line, brighter under-eyes
 
