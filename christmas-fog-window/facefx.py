@@ -31,6 +31,9 @@ SMOOTH = 0.75           # skin smoothing (evens out tone, keeps it clear)
 DETAIL_KEEP = 0.8       # how much fine skin detail to keep (clearer, not blurry)
 FOLDS = 0.8             # soften nasolabial folds (法令纹)
 BLEMISH = True          # remove small spots and pimples
+IRIS_ENLARGE = 0.14     # circle-lens effect: slightly bigger, softer irises
+AEGYO_SAL = 1.0         # 卧蚕: soft bright puff under the lower lashes with a gentle shadow below
+LASH_LINE = 1.0         # soft darker lash line (makes the eyes look bigger)
 MAKEUP = True           # natural makeup: blush, lip tint, brows, lash line, brighter under-eyes
 
 # ------------------------------------------------------------------ landmarks
@@ -524,6 +527,7 @@ class FaceFX:
                 self.makeup_map.apply(out, pts)
             else:
                 self._makeup(out, pts, fw, now)
+            self._eyes(out, pts)
         self._accessory(out, pts, fw, now)
         return out
 
@@ -765,6 +769,93 @@ class FaceFX:
             tint = roi * np.float32([0.86, 0.8, 1.08]) * (1 - depth) + roi * np.float32([0.74, 0.68, 1.04]) * depth
             out[y0:y1, x0:x1] = np.clip(roi * (1 - lips * 0.6) + tint * lips * 0.6, 0, 255).astype(np.uint8)
             self._glow_spot(out, pts[14] * 0.45 + pts[17] * 0.55, fw * 0.025, 0.18)
+
+    # ---------------------------------------------------------- eyes: bigger irises, aegyo sal, lash line
+    @staticmethod
+    def _iris(out, pts, eye):
+        """Iris center and radius: from the iris landmarks when the model gives them, else the darkest spot."""
+        poly = pts[eye]
+        ew = float(np.linalg.norm(poly[0] - poly[8])) + 1e-6
+        iris_idx = 468 if eye is L_EYE else 473
+        if len(pts) > 477 and np.any(pts[iris_idx] != 0):
+            ring = pts[iris_idx + 1:iris_idx + 5]
+            c = pts[iris_idx]
+            r = float(np.linalg.norm(ring - c, axis=1).mean())
+            return c, r if r > 1 else ew * 0.2
+        x0, y0, bw, bh = cv2.boundingRect(poly.astype(np.int32))
+        if bw < 4 or bh < 4:
+            return poly.mean(0), ew * 0.2
+        g = cv2.cvtColor(out[y0:y0 + bh, x0:x0 + bw], cv2.COLOR_BGR2GRAY).astype(np.float32)
+        m = np.zeros((bh, bw), np.uint8)
+        cv2.fillPoly(m, [(poly - [x0, y0]).astype(np.int32)], 1)
+        g = cv2.GaussianBlur(g, (0, 0), max(1.0, ew * 0.08))
+        g[m == 0] = 255
+        y, x = np.unravel_index(np.argmin(g), g.shape)
+        return np.array([x0 + x, y0 + y], np.float32), ew * 0.21
+
+    def _eyes(self, out, pts):
+        H, W = out.shape[:2]
+        up = _unit(pts[10] - pts[152])
+        for eye, lower, upper in ((L_EYE, L_LOWER, L_UPPER), (R_EYE, R_LOWER, R_UPPER)):
+            poly = pts[eye]
+            ew = float(np.linalg.norm(poly[0] - poly[8])) + 1e-6
+            pad = int(ew * 0.9)
+            c0 = poly.mean(0)
+            x0, y0 = int(max(c0[0] - pad, 0)), int(max(c0[1] - pad, 0))
+            x1, y1 = int(min(c0[0] + pad, W)), int(min(c0[1] + pad, H))
+            if x1 - x0 < 8 or y1 - y0 < 8:
+                continue
+            off = np.array([x0, y0], np.float32)
+            roi = out[y0:y1, x0:x1].astype(np.float32)
+            yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
+
+            # circle-lens irises: magnify the iris inside the eye opening, soften and deepen its rim a little
+            if IRIS_ENLARGE:
+                c, r = self._iris(out, pts, eye)
+                R = r * 1.9
+                d2 = (xx - c[0]) ** 2 + (yy - c[1]) ** 2
+                w = _falloff(d2, R) * IRIS_ENLARGE
+                mapx = (xx - (xx - c[0]) * w - x0).astype(np.float32)
+                mapy = (yy - (yy - c[1]) * w - y0).astype(np.float32)
+                big = cv2.remap(out[y0:y1, x0:x1], mapx, mapy, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT).astype(np.float32)
+                em = np.zeros((y1 - y0, x1 - x0), np.uint8)
+                cv2.fillPoly(em, [(poly - off).astype(np.int32)], 255, cv2.LINE_AA)
+                em = cv2.GaussianBlur(em.astype(np.float32) / 255, (0, 0), max(1.0, ew * 0.02))[..., None]
+                rr = np.sqrt(d2)[..., None]
+                limbal = np.exp(-((rr - r * (1 + IRIS_ENLARGE)) / (r * 0.18)) ** 2) * 0.25
+                big = big * (1 - limbal)
+                roi = roi * (1 - em) + big * em
+
+            # aegyo sal: a soft highlighted puff hugging the lower lashes, with a faint shadow underneath
+            if AEGYO_SAL:
+                low = pts[lower]
+                band = np.zeros((y1 - y0, x1 - x0), np.float32)
+                shade = np.zeros_like(band)
+                n = len(low)
+                for i in range(n - 1):
+                    t = i / (n - 1)
+                    k = math.sin(math.pi * min(1.0, t * 1.15)) ** 0.7        # strongest under the middle
+                    p = low[i] - up * ew * 0.09 - off
+                    q = low[i + 1] - up * ew * 0.09 - off
+                    cv2.line(band, tuple(p.astype(int)), tuple(q.astype(int)), float(k), max(2, int(ew * 0.11)), cv2.LINE_AA)
+                    p2 = low[i] - up * ew * 0.2 - off
+                    q2 = low[i + 1] - up * ew * 0.2 - off
+                    cv2.line(shade, tuple(p2.astype(int)), tuple(q2.astype(int)), float(k), max(1, int(ew * 0.05)), cv2.LINE_AA)
+                band = cv2.GaussianBlur(band, (0, 0), ew * 0.035)[..., None] * AEGYO_SAL
+                shade = cv2.GaussianBlur(shade, (0, 0), ew * 0.03)[..., None] * AEGYO_SAL
+                roi = roi * (1 + 0.1 * band) + 10 * band * np.float32([1.0, 1.0, 1.05])
+                roi = roi * (1 - 0.08 * shade * np.float32([1.0, 1.02, 0.98]))
+
+            # soft lash line along the upper lid (and a hint at the outer lower lid)
+            if LASH_LINE:
+                line = np.zeros((y1 - y0, x1 - x0), np.float32)
+                lid = (pts[upper] - off).astype(np.int32)
+                cv2.polylines(line, [lid], False, 1.0, max(1, int(ew * 0.05)), cv2.LINE_AA)
+                outer_low = (pts[lower][:4] - off).astype(np.int32)
+                cv2.polylines(line, [outer_low], False, 0.5, max(1, int(ew * 0.03)), cv2.LINE_AA)
+                line = cv2.GaussianBlur(line, (0, 0), max(0.8, ew * 0.015))[..., None] * 0.45 * LASH_LINE
+                roi = roi * (1 - line) + np.float32([30, 28, 34]) * line
+            out[y0:y1, x0:x1] = np.clip(roi, 0, 255).astype(np.uint8)
 
     # ---------------------------------------------------------- 3. accessories
     def _accessory(self, out, pts, fw, now):
