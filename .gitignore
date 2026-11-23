@@ -1,6 +1,7 @@
 *.pyc
 *.task
 .DS_Store
+.cache/
 .camera
 .env
 .venv/

@@ -90,6 +90,7 @@ The first run downloads two small MediaPipe models (hand + face tracking) into t
 - `window.py`: frost, snow, lighting and the world outside
 - `droplets.py`: water droplets and sliding drops
 - `facefx.py`: the face filters
+- `accessories.py`: the watercolor-style Santa hat, reindeer antlers, tree hat and garland crown (painted once on first run, then cached)
 - `my_face_shape.json`: Shiqi's measured Douyin face shape (reusable in future projects)
 - `my_makeup.png` / `my_makeup.json`: Shiqi's learned Douyin makeup and skin tone
 - `cut_stickers.py`: cuts a sticker sheet into separate transparent PNGs

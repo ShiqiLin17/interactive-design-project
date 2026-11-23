@@ -476,6 +476,14 @@ class FaceFX:
             "mustache": make_mustache(),
         }
         self.red_nose = _sphere_rgba(60, (35, 30, 210))
+        try:   # watercolor versions (like Shiqi's sticker sheet), cached after the first run
+            from accessories import build_all as paint_accessories
+            painted = paint_accessories()
+            for k in ("santa hat", "reindeer", "tree hat", "garland crown"):
+                self.sprites[k] = painted[k]
+            self.red_nose = painted["red nose"][0]
+        except Exception as e:
+            print("Couldn't paint the watercolor accessories, using the simple ones:", e)
         prof = os.path.join(os.path.dirname(os.path.abspath(__file__)), "my_face_shape.json")
         self.profile = ShapeProfile(prof) if USE_MY_SHAPE and os.path.exists(prof) else None
         here = os.path.dirname(os.path.abspath(__file__))
@@ -869,13 +877,13 @@ class FaceFX:
         crown = pts[10] + up * fh * 0.1             # hats sit just above the hairline
         if name in ("santa hat", "reindeer", "tree hat", "garland crown"):
             spr, anc = self.sprites[name]
-            width = {"santa hat": 1.6, "reindeer": 2.0, "tree hat": 1.55, "garland crown": 1.6}[name] * fw
-            pos = crown + up * fh * {"santa hat": -0.06, "reindeer": 0.17, "tree hat": -0.04, "garland crown": 0.05}[name]
+            width = {"santa hat": 1.6, "reindeer": 2.0, "tree hat": 1.4, "garland crown": 1.75}[name] * fw
+            pos = crown + up * fh * {"santa hat": -0.06, "reindeer": 0.12, "tree hat": -0.16, "garland crown": -0.12}[name]
             if name == "santa hat":
                 pos = pos + right * fw * 0.05
             _place(out, spr, pos, anc, width, roll)
             if name == "reindeer":
-                _place(out, self.red_nose, pts[4] - up * fw * 0.01, (0.5, 0.5), fw * 0.22, roll)
+                _place(out, self.red_nose, pts[4] - up * fw * 0.01, (0.5, 0.5), fw * 0.17, roll)
         elif name == "earmuffs":
             spr, anc = self.sprites["earmuffs"]
             a, b = pts[234] - right * fw * 0.06, pts[454] + right * fw * 0.06
