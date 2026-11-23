@@ -20,7 +20,8 @@ import cv2
 import numpy as np
 
 from stickers import build_all
-from window import ChristmasWindow
+from window import RealWindow
+from droplets import Droplets
 import text
 
 # ---------------------------------------------------------------- settings
@@ -34,6 +35,9 @@ PINCH_ON = 0.32              # fingertip distance (relative to hand size) to sta
 PINCH_OFF = 0.48             # ...and to release it
 SPAWN_COOLDOWN = 0.45        # seconds between stickers
 MINI_SIZE = 46               # size of the little stickers shown on your fingertips
+DRAW_WIDTH = 9               # thickness of the line when you draw in the fog
+ZOOM_MIN, ZOOM_MAX = 0.4, 3.5
+WIPE_PAUSE_AFTER_DRAW = 1.5  # seconds after drawing before an open palm wipes again
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODELS = {
@@ -111,32 +115,59 @@ def paste(frame, rgba, cx, cy, shadow=0.0, lift=0):
     blend(rgba[..., :3].astype(np.float32), alpha, 0, 0)
 
 
+def draw_badge(out, pos, icon, scale=1.0, active=False):
+    """Little round icon on a fingertip: a 4-way arrow (move) or a pencil (draw)."""
+    r = int(15 * scale)
+    c = (int(pos[0]), int(pos[1]))
+    cv2.circle(out, (c[0] + 1, c[1] + 3), r, (40, 40, 40), -1, cv2.LINE_AA)
+    cv2.circle(out, c, r, (120, 215, 140) if active else (252, 250, 248), -1, cv2.LINE_AA)
+    ink = (255, 255, 255) if active else (70, 62, 58)
+    k = r * 0.55
+    if icon == "move":
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            tip = (int(c[0] + dx * k), int(c[1] + dy * k))
+            cv2.line(out, c, tip, ink, 2, cv2.LINE_AA)
+            px, py = -dy, dx
+            for s in (1, -1):
+                cv2.line(out, tip, (int(tip[0] - dx * k * 0.4 + px * s * k * 0.35),
+                                    int(tip[1] - dy * k * 0.4 + py * s * k * 0.35)), ink, 2, cv2.LINE_AA)
+    else:
+        a = (int(c[0] - k * 0.8), int(c[1] + k * 0.8))
+        b = (int(c[0] + k * 0.8), int(c[1] - k * 0.8))
+        cv2.line(out, a, b, ink, max(2, int(r * 0.28)), cv2.LINE_AA)
+        cv2.circle(out, a, 2, ink, -1, cv2.LINE_AA)
+        cv2.line(out, (int(b[0] - k * 0.35), int(b[1] - k * 0.05)), (int(b[0] + k * 0.05), int(b[1] + k * 0.35)),
+                 (252, 250, 248) if not active else (120, 215, 140), 2, cv2.LINE_AA)
+
+
 # ---------------------------------------------------------------- fog
 class Fog:
-    def __init__(self, w, h, scale=4):
+    def __init__(self, w, h, scale=2):
         self.w, self.h, self.s = w, h, scale
         self.mask = np.zeros((h // scale, w // scale), np.float32)  # starts clear
         ys, xs = np.mgrid[0:h // scale, 0:w // scale]
         self.grid = (xs.astype(np.float32), ys.astype(np.float32))
         rng = np.random.default_rng(7)
-        # condensation: thousands of tiny droplets, each with a dark edge and a bright highlight
-        drops = np.zeros((h, w), np.float32)
-        for _ in range(int(w * h / 90)):
+        # fine mist: countless tiny beads of water with a dark edge and a bright point
+        mist = np.zeros((h, w), np.float32)
+        for _ in range(int(w * h / 60)):
             x, y = int(rng.integers(0, w)), int(rng.integers(0, h))
-            r = int(rng.choice([1, 1, 1, 2, 2, 3]))
-            cv2.circle(drops, (x, y), r, -0.6, -1, cv2.LINE_AA)
-            cv2.circle(drops, (x - (r > 1), y - (r > 1)), max(1, r - 1), 1.0, -1, cv2.LINE_AA)
-        drops = cv2.GaussianBlur(drops, (0, 0), 0.6)
-        haze = cv2.resize(rng.random((h // 40, w // 40)).astype(np.float32), (w, h),
+            r = int(rng.choice([1, 1, 1, 1, 2]))
+            cv2.circle(mist, (x, y), r, -0.5, -1, cv2.LINE_AA)
+            cv2.circle(mist, (x, y - (r > 1)), max(1, r - 1), 0.9, -1, cv2.LINE_AA)
+        mist = cv2.GaussianBlur(mist, (0, 0), 0.5)
+        haze = cv2.resize(rng.random((h // 50, w // 50)).astype(np.float32), (w, h),
                           interpolation=cv2.INTER_CUBIC)
-        self.texture = (drops * 16 + (haze - 0.5) * 22)[..., None].astype(np.float32)
-        self.tint = np.array([236, 230, 224], np.float32)  # soft misty white (BGR)
+        tex = mist * 3 + (haze - 0.5) * 14
+        self.tex_pos = np.repeat(np.clip(tex, 0, 255)[..., None], 3, 2).astype(np.uint8)
+        self.tex_neg = np.repeat(np.clip(-tex, 0, 255)[..., None], 3, 2).astype(np.uint8)
+        self.m_full = np.zeros((h, w), np.float32)
 
     def wipe(self, p0, p1, radius):
         s = self.s
         a = (int(p0[0] / s), int(p0[1] / s))
         b = (int(p1[0] / s), int(p1[1] / s))
-        r = max(2, int(radius / s))
+        r = max(1, int(round(radius / s)))
         cv2.line(self.mask, a, b, 0.0, 2 * r, cv2.LINE_AA)
         cv2.circle(self.mask, b, r, 0.0, -1, cv2.LINE_AA)
 
@@ -148,6 +179,12 @@ class Fog:
         self.mask += blob * amount
         np.clip(self.mask, 0, 1, out=self.mask)
 
+    def value_at(self, x, y):
+        xi, yi = int(x / self.s), int(y / self.s)
+        if 0 <= yi < self.mask.shape[0] and 0 <= xi < self.mask.shape[1]:
+            return float(self.mask[yi, xi])
+        return 0.0
+
     def coverage(self):
         return float(self.mask.mean())
 
@@ -156,38 +193,20 @@ class Fog:
             self.mask += dt / FOG_REGROW_SECONDS
             np.clip(self.mask, 0, 1, out=self.mask)
 
-    def render(self, frame):
+    def render(self, frame, tint):
+        """tint: function(shape) -> fog color at low resolution."""
         h, w = frame.shape[:2]
-        small = cv2.resize(frame, (w // 8, h // 8), interpolation=cv2.INTER_AREA)
-        small = cv2.GaussianBlur(small, (0, 0), 4).astype(np.float32) * 0.5 + self.tint * 0.5
-        fogged = cv2.resize(small, (w, h), interpolation=cv2.INTER_CUBIC) + self.texture
-        m = cv2.GaussianBlur(self.mask, (0, 0), 2.0)
+        sh = (h // 16, w // 16)
+        small = cv2.resize(frame, (sh[1], sh[0]), interpolation=cv2.INTER_AREA)
+        small = cv2.GaussianBlur(small, (0, 0), 1.6).astype(np.float32) * 0.42 + tint(sh) * 0.58
+        fogged = cv2.resize(cv2.convertScaleAbs(small), (w, h), interpolation=cv2.INTER_CUBIC)
+        fogged = cv2.subtract(cv2.add(fogged, self.tex_pos), self.tex_neg)
+        m = cv2.GaussianBlur(self.mask, (0, 0), 1.2)
         m = cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR)
-        rim = (m * (1 - m) * 4) ** 2           # denser droplets at the edge of a wipe
-        m = np.clip(0.04 + 0.96 * m + rim * 0.25, 0, 1)
-        return cv2.blendLinear(frame, cv2.convertScaleAbs(fogged), 1 - m, m)
-
-
-# ---------------------------------------------------------------- snow + sparkles
-class Snow:
-    def __init__(self, w, h, n=140):
-        self.w, self.h = w, h
-        self.flakes = [self._new(random.uniform(0, h)) for _ in range(n)]
-
-    def _new(self, y=None):
-        r = random.choice([1, 1, 2, 2, 3, 4])
-        return [random.uniform(0, self.w), -10 if y is None else y, r,
-                random.uniform(25, 60) * (0.6 + r / 4), random.uniform(0, 6.28)]
-
-    def update_draw(self, frame, dt, t):
-        layer = frame.copy()
-        for i, f in enumerate(self.flakes):
-            f[1] += f[3] * dt
-            f[0] += math.sin(t * 1.3 + f[4]) * 12 * dt
-            if f[1] > self.h + 10:
-                self.flakes[i] = f = self._new()
-            cv2.circle(layer, (int(f[0]), int(f[1])), f[2], (255, 255, 255), -1, cv2.LINE_AA)
-        cv2.addWeighted(layer, 0.75, frame, 0.25, 0, frame)
+        rim = (m * (1 - m) * 4) ** 2           # fog piles up a little at the edge of a wipe
+        m = np.clip(0.03 + 0.97 * m + rim * 0.2, 0, 1)
+        self.m_full = m
+        return cv2.blendLinear(frame, fogged, 1 - m, m)
 
 
 class BreathPuffs:
@@ -255,13 +274,14 @@ class Sticker:
         self.kind, self.x, self.y = kind, x, y
         self.angle = random.uniform(-15, 15)
         self.born = now
-        self.base = cv2.resize(img, None, fx=STICKER_SIZE / img.shape[1],
-                               fy=STICKER_SIZE / img.shape[1], interpolation=cv2.INTER_AREA)
+        self.base = img                                  # full resolution, so zooming in stays sharp
+        self.base_scale = STICKER_SIZE / img.shape[1]
+        self.zoom = 1.0
         self.held = False
         self.dropped = None
 
     def radius(self):
-        return STICKER_SIZE * 0.5
+        return STICKER_SIZE * 0.5 * self.zoom
 
     def scale(self, now):
         t = (now - self.born) / 0.35
@@ -275,7 +295,7 @@ class Sticker:
         return max(s, 0.01)
 
     def draw(self, frame, now):
-        img = rotate_scale(self.base, self.angle, self.scale(now))
+        img = rotate_scale(self.base, self.angle, self.scale(now) * self.base_scale * self.zoom)
         paste(frame, img, self.x, self.y, shadow=0.45 if self.held else 0.3,
               lift=10 if self.held else 0)
 
@@ -284,6 +304,8 @@ class Sticker:
 class HandState:
     def __init__(self):
         self.pinch = None      # which finger is touching the thumb, or None
+        self.last_pen = None
+        self.drew_at = -10.0   # when this hand last drew (no wiping right after, so letters survive)
         self.last_palm = None
         self.smooth = None
 
@@ -293,18 +315,20 @@ def hand_size(lm):
 
 
 def is_open(lm):
+    """A clearly open palm: 4 fingers straight and the thumb spread away from the hand."""
     wrist = lm[0]
     up = sum(np.linalg.norm(lm[tip] - wrist) > np.linalg.norm(lm[tip - 2] - wrist) * 1.1
              for tip in (8, 12, 16, 20))
-    return up >= 3
+    thumb_out = np.linalg.norm(lm[THUMB_TIP] - lm[5]) > hand_size(lm) * 0.55
+    return up >= 4 and thumb_out
 
 
 class FogWindow:
     def __init__(self, w, h):
         self.w, self.h = w, h
         self.fog = Fog(w, h)
-        self.window = ChristmasWindow(w, h)
-        self.snow = Snow(w, h)
+        self.window = RealWindow(w, h)
+        self.drops = Droplets(w, h, self.window.warm)
         self.sparkles = Sparkles()
         self.puffs = BreathPuffs()
         self.breath_time = 0.0
@@ -353,7 +377,7 @@ class FogWindow:
                 self._move_hand(st, lm, size, now)
             # wipe with an open palm (only when not pinching)
             palm = lm[[0, 5, 9, 13, 17]].mean(axis=0)
-            if st.pinch is None and is_open(lm):
+            if st.pinch is None and is_open(lm) and now - st.drew_at > WIPE_PAUSE_AFTER_DRAW:
                 self.fog.wipe(st.last_palm if st.last_palm is not None else palm, palm, size * 0.95)
                 st.last_palm = palm
             else:
@@ -367,6 +391,7 @@ class FogWindow:
                     if label == self.move_hand():
                         self._drop(now)
         self.fog.regrow(dt)
+        self.drops.update_runners(self.fog, self.window.glass, dt)
 
     def _sticker_hand(self, st, lm, size, now):
         dists = {k: np.linalg.norm(lm[THUMB_TIP] - lm[i]) / size for k, i in FINGER_TIPS.items()}
@@ -383,24 +408,47 @@ class FogWindow:
             st.pinch = None
 
     def _move_hand(self, st, lm, size, now):
-        d = np.linalg.norm(lm[THUMB_TIP] - lm[8]) / size
-        point = (lm[THUMB_TIP] + lm[8]) / 2
-        if st.pinch is None and d < PINCH_ON:
-            st.pinch = "grab"
-            for s in reversed(self.stickers):  # top-most first
-                if math.hypot(s.x - point[0], s.y - point[1]) < s.radius() * 1.1:
-                    self.grabbed = s
-                    s.held = True
-                    self.grab_offset = (s.x - point[0], s.y - point[1])
-                    self.stickers.remove(s)
-                    self.stickers.append(s)  # bring to front
-                    break
-        elif st.pinch is not None and d > PINCH_OFF:
+        d_idx = np.linalg.norm(lm[THUMB_TIP] - lm[8]) / size
+        d_mid = np.linalg.norm(lm[THUMB_TIP] - lm[12]) / size
+        grab_pt = (lm[THUMB_TIP] + lm[8]) / 2
+        pen = (lm[THUMB_TIP] + lm[12]) / 2
+        if st.pinch is None:
+            if d_mid < PINCH_ON and d_mid < d_idx:          # thumb + middle: draw in the fog
+                st.pinch = "draw"
+                st.last_pen = pen
+            elif d_idx < PINCH_ON:                          # thumb + index: grab a sticker
+                st.pinch = "grab"
+                for s in reversed(self.stickers):  # top-most first
+                    if math.hypot(s.x - grab_pt[0], s.y - grab_pt[1]) < s.radius() * 1.1:
+                        self.grabbed = s
+                        s.held = True
+                        self.grab_offset = (s.x - grab_pt[0], s.y - grab_pt[1])
+                        self.grab_size, self.grab_zoom = size, s.zoom
+                        self.stickers.remove(s)
+                        self.stickers.append(s)  # bring to front
+                        break
+        elif st.pinch == "grab" and self.grabbed is None and d_mid < PINCH_ON and d_mid < d_idx:
+            st.pinch = "draw"                               # thumb slid past the index on its way to the middle
+            st.last_pen = pen
+        elif st.pinch == "grab" and d_idx > PINCH_OFF:
             st.pinch = None
             self._drop(now)
-        if st.pinch and self.grabbed:
-            self.grabbed.x = point[0] + self.grab_offset[0]
-            self.grabbed.y = point[1] + self.grab_offset[1]
+        elif st.pinch == "draw" and d_mid > PINCH_OFF:
+            st.pinch = None
+            st.last_pen = None
+
+        if st.pinch == "grab" and self.grabbed:
+            g = self.grabbed
+            # hand closer to the camera looks bigger -> sticker gets bigger
+            target = float(np.clip(self.grab_zoom * (size / self.grab_size) ** 1.5, ZOOM_MIN, ZOOM_MAX))
+            g.zoom = g.zoom * 0.7 + target * 0.3
+            k = g.zoom / self.grab_zoom
+            g.x = grab_pt[0] + self.grab_offset[0] * k
+            g.y = grab_pt[1] + self.grab_offset[1] * k
+        if st.pinch == "draw":
+            self.fog.wipe(st.last_pen, pen, DRAW_WIDTH / 2)
+            st.last_pen = pen
+            st.drew_at = now
 
     def _drop(self, now):
         if self.grabbed:
@@ -421,9 +469,11 @@ class FogWindow:
 
     # --- drawing
     def draw(self, frame, hands, now, dt):
-        outside = self.window.reflection(frame)
-        self.snow.update_draw(outside, dt, now)       # snow falls outside the glass
-        out = self.fog.render(outside)
+        outside = self.window.outside(frame, now, dt)
+        out = self.fog.render(outside, lambda sh: self.window.fog_tint(now, sh))
+        out = self.drops.apply(out, outside, self.fog.m_full)
+        self.window.draw_ice(out)
+        self.window.glass_fx(out, now)
         self.puffs.update_draw(out, dt)
         for s in self.stickers:
             s.draw(out, now)
@@ -445,10 +495,21 @@ class FogWindow:
                 paste(out, label, c[0], c[1])
         for label, _ in hands:
             st = self.states[label]
-            if st.smooth is None or label != self.sticker_hand:
+            if st.smooth is None:
                 continue
             lm = st.smooth
             size = hand_size(lm)
+            if label != self.sticker_hand:
+                # drag hand previews: index = move/zoom, middle = draw in the fog
+                for tip, icon in ((8, "move"), (12, "draw")):
+                    d = lm[tip] - lm[tip - 1]
+                    d = d / (np.linalg.norm(d) + 1e-6)
+                    pos = lm[tip] + d * 26
+                    close = np.linalg.norm(lm[THUMB_TIP] - lm[tip]) / size
+                    grow = 1 + 0.4 * float(np.clip((0.9 - close) / 0.6, 0, 1))
+                    active = (st.pinch == "grab" and icon == "move") or (st.pinch == "draw" and icon == "draw")
+                    draw_badge(out, pos, icon, 1.35 if active else grow, active)
+                continue
             for kind, tip in FINGER_TIPS.items():
                 d = lm[tip] - lm[tip - 1]
                 d = d / (np.linalg.norm(d) + 1e-6)
@@ -467,15 +528,19 @@ class FogWindow:
             lm = st.smooth
             stick = label == self.sticker_hand
             accent = (90, 90, 235) if stick else (120, 215, 140)
-            tip = (lm[THUMB_TIP] + lm[8]) / 2
+            tip = (lm[THUMB_TIP] + lm[12 if st.pinch == "draw" else 8]) / 2
             p = (int(tip[0]), int(tip[1]))
-            if st.pinch:
+            if st.pinch == "draw":
+                cv2.circle(out, p, DRAW_WIDTH // 2 + 3, (255, 255, 255), 1, cv2.LINE_AA)
+            elif st.pinch:
                 cv2.circle(out, p, 12, accent, -1, cv2.LINE_AA)
                 cv2.circle(out, p, 12, (255, 255, 255), 2, cv2.LINE_AA)
             else:
                 cv2.circle(out, p, 9, (255, 255, 255), 2, cv2.LINE_AA)
             if self.show_help:
-                tag = text.render("stickers" if stick else "move", 17, (255, 255, 255))
+                tag = text.render("stickers" if stick else "move  \u00b7  draw", 17, (255, 255, 255))
+                if self.grabbed is not None and not stick and st.pinch == "grab":
+                    tag = text.render("closer = bigger  \u00b7  farther = smaller", 17, (255, 255, 255))
                 if tag is not None:
                     w0 = lm[0]
                     paste(out, tag, int(w0[0]), int(w0[1] + 34))
@@ -487,14 +552,15 @@ class FogWindow:
             return
         gx1, gy1, gx2, gy2 = self.window.glass
         side = "right" if self.sticker_hand == "Right" else "left"
-        line1 = (f"blow to fog   \u00b7   open palm to wipe   \u00b7   {side} hand: thumb + index tree, "
-                 "middle snowman, ring gift, pinky candy cane   \u00b7   other hand: pinch to move")
-        line2 = "S swap hands    R fog    W clear fog    Z undo    C clear    P photo    H hide help    Q quit"
-        y = gy2 + (self.h - gy2) // 2 + 12
-        for i, line in enumerate((line1, line2)):
-            img = text.render(line, 15 if i == 0 else 13, (255, 246, 230) if i == 0 else (225, 210, 190), "sans", 0.9)
+        line1 = (f"blow to fog  \u00b7  open palm wipes  \u00b7  {side} hand: thumb + index tree, middle snowman, "
+                 "ring gift, pinky candy cane")
+        line2 = "other hand: thumb + index grabs a sticker (move closer to zoom)  \u00b7  thumb + middle draws in the fog"
+        line3 = "S swap hands    R fog    W clear fog    Z undo    C clear    P photo    H hide help    Q quit"
+        y = self.h - 58
+        for i, line in enumerate((line1, line2, line3)):
+            img = text.render(line, 14 if i < 2 else 12, (255, 246, 230) if i < 2 else (225, 210, 190), "sans", 0.9)
             if img is not None:
-                paste(out, img, self.w // 2, y + i * 20)
+                paste(out, img, self.w // 2, y + i * 19)
 
 
 # ---------------------------------------------------------------- main loop

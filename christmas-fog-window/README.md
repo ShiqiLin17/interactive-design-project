@@ -1,9 +1,9 @@
 # 🎄 Christmas Fog Window
 
-A cozy night window with you reflected in the glass. Blow on it to fog it up, wipe the fog away with your hand, and decorate the glass with Christmas stickers using hand gestures.
+A realistic winter window: condensation with real-looking water droplets, frost creeping in from the edges, snow piled on the sill outside, warm firelight on one side and cool blue winter light on the other. Blow on the glass to fog it up, wipe it with your hand, write in the fog, and decorate it with Christmas stickers using hand gestures.
 
 ![preview](preview.png)
-*(Preview made with a placeholder instead of a real camera feed.)*
+*(Preview made with a placeholder instead of a real camera feed. With your camera, you'll be the one behind the glass.)*
 
 ## How to play
 
@@ -15,10 +15,13 @@ A cozy night window with you reflected in the glass. Blow on it to fog it up, wi
 | thumb + **middle** | ⛄ Snowman |
 | thumb + **ring** | 🎁 Gift |
 | thumb + **pinky** | 🍬 Candy cane |
-| 🤏 **Other hand:** pinch thumb + index on a sticker | Grab it, move it, and let go to place it |
+| 🤏 **Other hand:** thumb + **index** on a sticker | Grab it and move it. Bring your hand **closer** to the camera to make it bigger, or **farther** to make it smaller. Let go to place it. |
+| ✍️ **Other hand:** thumb + **middle** | Draw in the fog with your fingertip and write your own words |
 | Drag a sticker to the circle in the corner | Removes it |
 
-The sticker hand is your **right** hand by default. Press **S** to swap.
+The sticker hand is your **right** hand by default. Press **S** to swap. Both hands show small previews on their fingertips: mini stickers on the sticker hand, and a move icon (index) and pencil icon (middle) on the other hand.
+
+Tip: after you draw, the open-palm wipe pauses for a moment so you can lift your hand between letters without erasing them.
 
 **Keys:** `S` swap hands · `R` fog the whole window · `W` clear all fog · `Z` undo · `C` clear stickers · `P` save a photo · `H` hide/show help · `F` fullscreen · `Q` quit
 
@@ -45,13 +48,16 @@ The first run downloads two small MediaPipe models (hand + face tracking) into t
 ## How it works
 
 - **MediaPipe Face Landmarker** tracks your lips. When the gap between them is big enough, fog spreads out from your mouth.
-- **MediaPipe Hand Landmarker** tracks 21 points on each hand. Fingertip distances detect pinches, and an open palm acts as the wiper.
-- The fog is a mask over the camera image: blurred, lightened, and textured with tiny condensation droplets. Wiping draws holes in the mask.
-- The window frame, garland, lights, candles, snow and stickers are all drawn with code (OpenCV + NumPy). There are no image files.
+- **MediaPipe Hand Landmarker** tracks 21 points on each hand. Fingertip distances detect pinches, and an open palm with the thumb spread acts as the wiper. Hand size on screen (how close you are) controls sticker zoom.
+- **Fog** is a mask over the view: heavily blurred, lightened, and tinted cool blue-white, glowing warm near the fire. Wiping and drawing cut clear lines into the mask.
+- **Droplets** each work like a tiny lens. They show a flipped, sharper view of what's behind the glass, with a bright highlight, a dark rim, and light focused at the bottom. Some drops slide down and leave clear trails in the fog.
+- **The window** is drawn in its own space, then warped in perspective so the left side is closer and the right side is cropped. It has frost grains on the pane edges, granular snow on the outside sill, falling snow and soft fairy lights outside, and firelight that flickers on the frame and reflects in the glass.
+- Everything is drawn with code (OpenCV + NumPy). There are no image files.
 
 ## Files
 
 - `main.py`: camera loop, fog, gestures, stickers
-- `window.py`: the night scene, window frame and decorations
+- `window.py`: the window frame, frost, snow, lighting and the world outside
+- `droplets.py`: water droplets and sliding drops
 - `stickers.py`: the Christmas stickers
 - `text.py`: nicer fonts for the on-screen text
