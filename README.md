@@ -10,6 +10,7 @@ Each project lives in its own folder with:
 
 | Project | What it does |
 |---|---|
+| [Personal Color Test](color-palette/) | Korean-style personal color drape test with finger gestures and a side-by-side photo comparison |
 | [Christmas Fog Window](christmas-fog-window/) | Blow to fog a cozy Christmas window, wipe it with your hand, and decorate it with gesture-made stickers |
 
 ## Setup (once)
