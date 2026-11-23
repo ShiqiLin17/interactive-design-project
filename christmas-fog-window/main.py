@@ -3,7 +3,7 @@
 Your face:     open your mouth and blow at the mirror to fog it up
 Sticker hand:  touch your thumb to a finger to pop out a sticker
                index = tree, middle = snowman, ring = gift, pinky = candy cane
-Move hand:     pinch thumb + index on a sticker to grab it, release to drop it
+Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger)
 Either hand:   open palm wipes the fog away
 
 Keys: S swap hands · R fog all · W wipe all · H help · Z undo · C clear stickers · P screenshot · F fullscreen · Q quit
@@ -35,7 +35,7 @@ PINCH_ON = 0.32              # fingertip distance (relative to hand size) to sta
 PINCH_OFF = 0.48             # ...and to release it
 SPAWN_COOLDOWN = 0.45        # seconds between stickers
 MINI_SIZE = 46               # size of the little stickers shown on your fingertips
-DRAW_WIDTH = 9               # thickness of the line when you draw in the fog
+DRAW_WIDTH = 22              # thickness of the line when you draw in the fog
 ZOOM_MIN, ZOOM_MAX = 0.4, 3.5
 WIPE_PAUSE_AFTER_DRAW = 1.5  # seconds after drawing before an open palm wipes again
 
@@ -305,6 +305,7 @@ class HandState:
     def __init__(self):
         self.pinch = None      # which finger is touching the thumb, or None
         self.last_pen = None
+        self.draw_start = 0.0
         self.drew_at = -10.0   # when this hand last drew (no wiping right after, so letters survive)
         self.last_palm = None
         self.smooth = None
@@ -410,30 +411,21 @@ class FogWindow:
     def _move_hand(self, st, lm, size, now):
         d_idx = np.linalg.norm(lm[THUMB_TIP] - lm[8]) / size
         d_mid = np.linalg.norm(lm[THUMB_TIP] - lm[12]) / size
-        grab_pt = (lm[THUMB_TIP] + lm[8]) / 2
-        pen = (lm[THUMB_TIP] + lm[12]) / 2
+        pen = (lm[THUMB_TIP] + lm[8]) / 2        # thumb + index: write in the fog
+        grab_pt = (lm[THUMB_TIP] + lm[12]) / 2   # thumb + middle: grab, move and zoom a sticker
         if st.pinch is None:
-            if d_mid < PINCH_ON and d_mid < d_idx:          # thumb + middle: draw in the fog
+            if d_mid < PINCH_ON and d_mid < d_idx:
+                self._start_grab(st, grab_pt, size)
+            elif d_idx < PINCH_ON:
                 st.pinch = "draw"
                 st.last_pen = pen
-            elif d_idx < PINCH_ON:                          # thumb + index: grab a sticker
-                st.pinch = "grab"
-                for s in reversed(self.stickers):  # top-most first
-                    if math.hypot(s.x - grab_pt[0], s.y - grab_pt[1]) < s.radius() * 1.1:
-                        self.grabbed = s
-                        s.held = True
-                        self.grab_offset = (s.x - grab_pt[0], s.y - grab_pt[1])
-                        self.grab_size, self.grab_zoom = size, s.zoom
-                        self.stickers.remove(s)
-                        self.stickers.append(s)  # bring to front
-                        break
-        elif st.pinch == "grab" and self.grabbed is None and d_mid < PINCH_ON and d_mid < d_idx:
-            st.pinch = "draw"                               # thumb slid past the index on its way to the middle
-            st.last_pen = pen
-        elif st.pinch == "grab" and d_idx > PINCH_OFF:
+                st.draw_start = now
+        elif st.pinch == "draw" and now - st.draw_start < 0.2 and d_mid < PINCH_ON and d_mid < d_idx:
+            self._start_grab(st, grab_pt, size)          # thumb brushed the index on its way to the middle
+        elif st.pinch == "grab" and d_mid > PINCH_OFF:
             st.pinch = None
             self._drop(now)
-        elif st.pinch == "draw" and d_mid > PINCH_OFF:
+        elif st.pinch == "draw" and d_idx > PINCH_OFF:
             st.pinch = None
             st.last_pen = None
 
@@ -445,10 +437,23 @@ class FogWindow:
             k = g.zoom / self.grab_zoom
             g.x = grab_pt[0] + self.grab_offset[0] * k
             g.y = grab_pt[1] + self.grab_offset[1] * k
-        if st.pinch == "draw":
+        if st.pinch == "draw" and now - st.draw_start > 0.08:   # tiny delay so a passing touch doesn't leave a dot
             self.fog.wipe(st.last_pen, pen, DRAW_WIDTH / 2)
             st.last_pen = pen
             st.drew_at = now
+
+    def _start_grab(self, st, grab_pt, size):
+        st.pinch = "grab"
+        st.last_pen = None
+        for s in reversed(self.stickers):  # top-most first
+            if math.hypot(s.x - grab_pt[0], s.y - grab_pt[1]) < s.radius() * 1.1:
+                self.grabbed = s
+                s.held = True
+                self.grab_offset = (s.x - grab_pt[0], s.y - grab_pt[1])
+                self.grab_size, self.grab_zoom = size, s.zoom
+                self.stickers.remove(s)
+                self.stickers.append(s)  # bring to front
+                break
 
     def _drop(self, now):
         if self.grabbed:
@@ -500,8 +505,8 @@ class FogWindow:
             lm = st.smooth
             size = hand_size(lm)
             if label != self.sticker_hand:
-                # drag hand previews: index = move/zoom, middle = draw in the fog
-                for tip, icon in ((8, "move"), (12, "draw")):
+                # drag hand previews: index = draw in the fog, middle = move/zoom
+                for tip, icon in ((8, "draw"), (12, "move")):
                     d = lm[tip] - lm[tip - 1]
                     d = d / (np.linalg.norm(d) + 1e-6)
                     pos = lm[tip] + d * 26
@@ -528,7 +533,7 @@ class FogWindow:
             lm = st.smooth
             stick = label == self.sticker_hand
             accent = (90, 90, 235) if stick else (120, 215, 140)
-            tip = (lm[THUMB_TIP] + lm[12 if st.pinch == "draw" else 8]) / 2
+            tip = (lm[THUMB_TIP] + lm[8 if st.pinch == "draw" else 12]) / 2
             p = (int(tip[0]), int(tip[1]))
             if st.pinch == "draw":
                 cv2.circle(out, p, DRAW_WIDTH // 2 + 3, (255, 255, 255), 1, cv2.LINE_AA)
@@ -538,7 +543,7 @@ class FogWindow:
             else:
                 cv2.circle(out, p, 9, (255, 255, 255), 2, cv2.LINE_AA)
             if self.show_help:
-                tag = text.render("stickers" if stick else "move  \u00b7  draw", 17, (255, 255, 255))
+                tag = text.render("stickers" if stick else "draw  \u00b7  move", 17, (255, 255, 255))
                 if self.grabbed is not None and not stick and st.pinch == "grab":
                     tag = text.render("closer = bigger  \u00b7  farther = smaller", 17, (255, 255, 255))
                 if tag is not None:
@@ -554,7 +559,7 @@ class FogWindow:
         side = "right" if self.sticker_hand == "Right" else "left"
         line1 = (f"blow to fog  \u00b7  open palm wipes  \u00b7  {side} hand: thumb + index tree, middle snowman, "
                  "ring gift, pinky candy cane")
-        line2 = "other hand: thumb + index grabs a sticker (move closer to zoom)  \u00b7  thumb + middle draws in the fog"
+        line2 = "other hand: thumb + index writes in the fog  \u00b7  thumb + middle grabs a sticker (move closer to zoom)"
         line3 = "S swap hands    R fog    W clear fog    Z undo    C clear    P photo    H hide help    Q quit"
         y = self.h - 58
         for i, line in enumerate((line1, line2, line3)):

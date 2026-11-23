@@ -15,11 +15,11 @@ A realistic winter window: condensation with real-looking water droplets, frost 
 | thumb + **middle** | ⛄ Snowman |
 | thumb + **ring** | 🎁 Gift |
 | thumb + **pinky** | 🍬 Candy cane |
-| 🤏 **Other hand:** thumb + **index** on a sticker | Grab it and move it. Bring your hand **closer** to the camera to make it bigger, or **farther** to make it smaller. Let go to place it. |
-| ✍️ **Other hand:** thumb + **middle** | Draw in the fog with your fingertip and write your own words |
+| 🤏 **Other hand:** thumb + **middle** on a sticker | Grab it and move it. Bring your hand **closer** to the camera to make it bigger, or **farther** to make it smaller. Let go to place it. |
+| ✍️ **Other hand:** thumb + **index** | Draw in the fog with your fingertip and write your own words |
 | Drag a sticker to the circle in the corner | Removes it |
 
-The sticker hand is your **right** hand by default. Press **S** to swap. Both hands show small previews on their fingertips: mini stickers on the sticker hand, and a move icon (index) and pencil icon (middle) on the other hand.
+The sticker hand is your **right** hand by default. Press **S** to swap. Both hands show small previews on their fingertips: mini stickers on the sticker hand, and a pencil icon (index) and move icon (middle) on the other hand.
 
 Tip: after you draw, the open-palm wipe pauses for a moment so you can lift your hand between letters without erasing them.
 
