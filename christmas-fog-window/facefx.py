@@ -10,18 +10,23 @@ Three layers, applied in this order:
 
 Every strength is a setting below: 0 turns that effect off.
 """
+import json
 import math
+import os
 
 import cv2
 import numpy as np
 
 # ------------------------------------------------------------------ settings (tuned to Shiqi's face, to match her Douyin filter)
-FACE_SLIM = 0.06        # V-line: pull the lower jawline inward
-CHIN_SLIM = 0.07        # slightly narrower chin
-EYE_ENLARGE = 0.08      # slightly bigger eyes
-EYE_LOWER = 0.01        # eyes a touch lower (fraction of face height)
-NOSE_SLIM = 0.22        # narrower nose wings (鼻翼)
-HAIRLINE_LOWER = 0.04   # lower hairline (fraction of face height)
+USE_MY_SHAPE = True     # reshape exactly like Shiqi's Douyin filter (measured, see my_face_shape.json)
+SHAPE_STRENGTH = 1.0    # 1.0 = same as Douyin
+# extra hand tweaks on top (0 = off)
+FACE_SLIM = 0.0         # pull the lower jawline inward
+CHIN_SLIM = 0.0         # narrower chin
+EYE_ENLARGE = 0.0       # bigger eyes
+EYE_LOWER = 0.0         # move eyes lower (fraction of face height)
+NOSE_SLIM = 0.0         # narrower nose wings (鼻翼)
+HAIRLINE_LOWER = 0.0    # lower hairline (fraction of face height)
 SMOOTH = 0.9            # skin airbrushing
 FOLDS = 0.8             # soften nasolabial folds (法令纹)
 BLEMISH = True          # remove small spots and pimples
@@ -316,6 +321,71 @@ def make_mustache():
     return out, (0.5, 0.3)
 
 
+# ------------------------------------------------------------------ measured face shape
+class ShapeProfile:
+    """Smooth warp that moves every face landmark the way Shiqi's Douyin filter does.
+
+    my_face_shape.json holds, for each of the 468 landmarks, where it sits on a reference face and how far the
+    Douyin filter moved it (both in eye-distance units, x along the eyes, y down the face). We fit a smooth
+    radial-basis field to those movements once; each frame we just evaluate it in the current face's frame.
+    """
+    SIGMA = 0.55          # smoothness of the field (eye-distance units)
+
+    def __init__(self, path):
+        d = json.load(open(path))
+        pos = np.array(d["ref_positions"], np.float32)
+        disp = np.array(d["displacements"], np.float32)
+        centers = pos[::3]
+        ring = [(math.cos(a) * r, math.sin(a) * r + 0.6) for r in (2.8, 3.6) for a in np.linspace(0, math.tau, 20, endpoint=False)]
+        ring = np.array(ring, np.float32)                       # far away: no movement
+        self.centers = np.vstack([centers, ring])
+        targets = np.vstack([pos, ring])
+        values = np.vstack([disp, np.zeros_like(ring)])
+        Phi = self._phi(targets, self.centers)
+        lam = 1e-3
+        self.w = np.linalg.solve(Phi.T @ Phi + lam * np.eye(len(self.centers)), Phi.T @ values).astype(np.float32)
+
+    def _phi(self, X, C):
+        d2 = ((X[:, None, :] - C[None, :, :]) ** 2).sum(-1)
+        return np.exp(-d2 / (2 * self.SIGMA ** 2)).astype(np.float32)
+
+    @staticmethod
+    def frame(pts):
+        le, re = pts[[33, 133]].mean(0), pts[[263, 362]].mean(0)
+        iod = float(np.linalg.norm(re - le)) + 1e-6
+        ex = (re - le) / iod
+        ey = np.array([-ex[1], ex[0]], np.float32)
+        return (le + re) / 2, ex, ey, iod
+
+    # the field is the same for every frame in face coordinates, so we tabulate it once on a grid
+    TAB_MIN, TAB_MAX, TAB_N = (-4.0, -3.4), (4.0, 4.6), 160
+
+    def _table(self):
+        if not hasattr(self, "_tab"):
+            xs = np.linspace(self.TAB_MIN[0], self.TAB_MAX[0], self.TAB_N, dtype=np.float32)
+            ys = np.linspace(self.TAB_MIN[1], self.TAB_MAX[1], self.TAB_N, dtype=np.float32)
+            gx, gy = np.meshgrid(xs, ys)
+            D = self._phi(np.stack([gx.ravel(), gy.ravel()], 1), self.centers) @ self.w
+            self._tab = (D[:, 0].reshape(gx.shape).astype(np.float32), D[:, 1].reshape(gx.shape).astype(np.float32))
+        return self._tab
+
+    def field(self, X, Y, pts, strength=1.0):
+        org, ex, ey, iod = self.frame(pts)
+        dx, dy = X - org[0], Y - org[1]
+        lx = (dx * ex[0] + dy * ex[1]) / iod
+        ly = (dx * ey[0] + dy * ey[1]) / iod
+        n = self.TAB_N - 1
+        u = ((lx - self.TAB_MIN[0]) / (self.TAB_MAX[0] - self.TAB_MIN[0]) * n).astype(np.float32)
+        v = ((ly - self.TAB_MIN[1]) / (self.TAB_MAX[1] - self.TAB_MIN[1]) * n).astype(np.float32)
+        tx, ty = self._table()
+        shape = np.shape(X)
+        u2, v2 = u.reshape(-1, 1), v.reshape(-1, 1)
+        Lx = cv2.remap(tx, u2, v2, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).reshape(shape)
+        Ly = cv2.remap(ty, u2, v2, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).reshape(shape)
+        s = iod * strength
+        return (Lx * ex[0] + Ly * ey[0]) * s, (Lx * ex[1] + Ly * ey[1]) * s
+
+
 # ------------------------------------------------------------------ the filter
 class FaceFX:
     def __init__(self, seed=21):
@@ -338,6 +408,8 @@ class FaceFX:
             "mustache": make_mustache(),
         }
         self.red_nose = _sphere_rgba(60, (35, 30, 210))
+        prof = os.path.join(os.path.dirname(os.path.abspath(__file__)), "my_face_shape.json")
+        self.profile = ShapeProfile(prof) if USE_MY_SHAPE and os.path.exists(prof) else None
         x = np.arange(256, dtype=np.float32)
         lift = lambda gain, add: np.clip(x * gain + add * (1 - x / 255) ** 0.5, 0, 255)
         self.lut = np.stack([lift(1.04, 6), lift(1.05, 7), lift(1.03, 6)], axis=1).astype(np.uint8).reshape(256, 1, 3)
@@ -395,6 +467,11 @@ class FaceFX:
         right = np.array([-up[1], up[0]])
         mid = (pts[168] + pts[152]) / 2
 
+        if self.profile is not None:
+            pDx, pDy = self.profile.field(X, Y, pts, SHAPE_STRENGTH)
+            Dx += pDx
+            Dy += pDy
+
         def translate(c, v, R):
             w = _falloff((X - c[0]) ** 2 + (Y - c[1]) ** 2, R)
             Dx[...] += v[0] * w
@@ -432,11 +509,11 @@ class FaceFX:
     def _reshape(self, frame, pts):
         H, W = frame.shape[:2]
         fw = np.linalg.norm(pts[234] - pts[454])
-        x0, y0 = np.maximum(pts[FACE_OVAL].min(axis=0) - fw * 0.35, 0).astype(int)
-        x1, y1 = np.minimum(pts[FACE_OVAL].max(axis=0) + fw * 0.35, [W, H]).astype(int)
+        x0, y0 = np.maximum(pts[FACE_OVAL].min(axis=0) - fw * 0.8, 0).astype(int)
+        x1, y1 = np.minimum(pts[FACE_OVAL].max(axis=0) + fw * 0.8, [W, H]).astype(int)
         if x1 - x0 < 20 or y1 - y0 < 20:
             return frame.copy(), pts
-        q = max(2, int(fw / 110))  # compute the warp at low resolution (it's smooth), then scale it up
+        q = max(3, int(fw / 60))   # compute the warp at low resolution (it's smooth), then scale it up
         gw, gh = (x1 - x0) // q + 1, (y1 - y0) // q + 1
         X, Y = np.meshgrid(np.linspace(x0, x1 - 1, gw, dtype=np.float32),
                            np.linspace(y0, y1 - 1, gh, dtype=np.float32))
