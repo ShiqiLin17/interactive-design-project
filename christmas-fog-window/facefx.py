@@ -383,7 +383,10 @@ class ShapeProfile:
         v = ((ly - self.TAB_MIN[1]) / (self.TAB_MAX[1] - self.TAB_MIN[1]) * n).astype(np.float32)
         tx, ty = self._table()
         shape = np.shape(X)
-        u2, v2 = u.reshape(-1, 1), v.reshape(-1, 1)
+        if len(shape) == 2:                       # a grid: keep it 2-D (OpenCV limits each side to 32767)
+            u2, v2 = u.reshape(shape), v.reshape(shape)
+        else:                                     # a list of points (the landmarks)
+            u2, v2 = u.reshape(-1, 1), v.reshape(-1, 1)
         Lx = cv2.remap(tx, u2, v2, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).reshape(shape)
         Ly = cv2.remap(ty, u2, v2, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).reshape(shape)
         s = iod * strength
