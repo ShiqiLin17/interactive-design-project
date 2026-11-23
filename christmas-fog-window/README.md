@@ -18,6 +18,7 @@ When it starts, the glass is clear and it says *breathe on it...*
 | thumb + **ring** | A faceted gold star |
 | thumb + **pinky** | A holly sprig with berries |
 | 🤏 **Other hand:** thumb + **middle** on an ornament | Grab it and move it. Bring your hand **closer** to the camera to make it bigger, or **farther** to make it smaller. Let go to place it. |
+| ✨ **Other hand:** thumb + **ring** | Switch your face accessory |
 | ✍️ **Other hand:** thumb + **index** | Draw in the fog with your fingertip and write your own words |
 | Drag an ornament to the circle in the corner | Removes it |
 
@@ -41,15 +42,17 @@ The stickers in `my_stickers/` are Shiqi's own artwork.
 
 ## Face filters
 
-Press **E** to switch between subtle winter filters. They follow your face as you move, and they sit under the fog like everything else:
+Your face gets a Douyin-style beauty filter all the time, plus a Christmas accessory you can switch.
 
-- **natural**: no filter
-- **soft glow**: slightly smoother, brighter, warmer skin. Eyes, brows and lips stay sharp.
-- **rosy cheeks** (the default): soft glow plus a cold-weather blush on your cheeks and the tip of your nose
-- **frosted lashes**: tiny ice crystals on your lashes and brows
-- **snow in hair**: twinkling snowflakes resting along your hairline
-- **freckles**: soft freckles across your nose and cheeks, with a little shimmer
-- **winter glam**: all of them together
+**Beauty (always on):**
+- Face shaping: slimmer jawline, slightly bigger eyes set a touch lower, narrower nose wings (鼻翼), lower hairline
+- Skin: airbrushed, brighter pinkish-fair tone, softened nasolabial folds (法令纹), automatic blemish and pimple removal
+- Makeup: champagne-pink glitter eyeshadow, brown winged liner with a white liner under it, inner-corner sparkle, high blush and a flush across the nose, freckles, little snowflake and gold and red star face stickers, nose-tip shimmer, glossy berry gradient lips
+
+**Accessories:** switch with **thumb + ring finger on your grab hand** (or press **E**):
+none → Santa hat → reindeer antlers + red nose → Christmas tree hat → garland crown with bells → fluffy earmuffs → floating pastel stars → mustache → snow in hair
+
+Everything follows your face as you move, and it sits under the fog like the rest of your reflection. The beauty settings are tuned for Shiqi's face (see the top of `facefx.py`).
 
 ## Run it
 

@@ -3,7 +3,8 @@
 Your face:     open your mouth and blow at the mirror to fog it up
 Sticker hand:  touch your thumb to a finger to pop out a sticker
                (each fingertip shows which one)   N = next page of stickers
-Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger)
+Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger);
+               thumb + ring switches your face filter
 Either hand:   close your hand into a fist and wipe with the pinky side
 
 Keys: V switch camera · E face filter · S swap hands · R fog all · W wipe all · H help · Z undo · C clear stickers · P screenshot · F fullscreen · Q quit
@@ -157,6 +158,12 @@ def draw_badge(out, pos, icon, scale=1.0, active=False):
             for s in (1, -1):
                 cv2.line(out, tip, (int(tip[0] - dx * k * 0.4 + px * s * k * 0.3),
                                     int(tip[1] - dy * k * 0.4 + py * s * k * 0.3)), ink, 1, cv2.LINE_AA)
+    elif icon == "filter":
+        for ang in range(4):
+            t = ang * math.pi / 2
+            p = (int(c[0] + math.cos(t) * k), int(c[1] + math.sin(t) * k))
+            cv2.line(out, c, p, ink, 1, cv2.LINE_AA)
+        cv2.circle(out, c, max(1, int(k * 0.3)), ink, -1, cv2.LINE_AA)
     else:
         a = (int(c[0] - k * 0.8), int(c[1] + k * 0.8))
         b = (int(c[0] + k * 0.8), int(c[1] - k * 0.8))
@@ -485,6 +492,17 @@ class FogWindow:
     def _move_hand(self, st, lm, size, now):
         d_idx = np.linalg.norm(lm[THUMB_TIP] - lm[8]) / size
         d_mid = np.linalg.norm(lm[THUMB_TIP] - lm[12]) / size
+        d_ring = np.linalg.norm(lm[THUMB_TIP] - lm[16]) / size
+        # thumb + ring: next face filter
+        if st.pinch is None and d_ring < PINCH_ON and d_ring < d_mid and d_ring < d_idx:
+            st.pinch = "filter"
+            st.pinch_since = now
+            self.facefx.next(now)
+            return
+        if st.pinch == "filter":
+            if d_ring > PINCH_OFF:
+                st.pinch = None
+            return
         pen = (lm[THUMB_TIP] + lm[8]) / 2        # thumb + index: write in the fog
         grab_pt = (lm[THUMB_TIP] + lm[12]) / 2   # thumb + middle: grab, move and zoom a sticker
         if st.pinch is None:
@@ -580,13 +598,13 @@ class FogWindow:
             size = hand_size(lm)
             if label != self.sticker_hand:
                 # drag hand previews: index = draw in the fog, middle = move/zoom
-                for tip, icon in ((8, "draw"), (12, "move")):
+                for tip, icon in ((8, "draw"), (12, "move"), (16, "filter")):
                     d = lm[tip] - lm[tip - 1]
                     d = d / (np.linalg.norm(d) + 1e-6)
                     pos = lm[tip] + d * 26
                     close = np.linalg.norm(lm[THUMB_TIP] - lm[tip]) / size
                     grow = 1 + 0.4 * float(np.clip((0.9 - close) / 0.6, 0, 1))
-                    active = (st.pinch == "grab" and icon == "move") or (st.pinch == "draw" and icon == "draw")
+                    active = st.pinch == {"move": "grab", "draw": "draw", "filter": "filter"}[icon]
                     draw_badge(out, pos, icon, 1.35 if active else grow, active)
                 continue
             for kind, tip in self.finger_tips().items():
@@ -616,7 +634,7 @@ class FogWindow:
             else:
                 cv2.circle(out, p, 7, (255, 255, 255), 1, cv2.LINE_AA)
             if self.show_help:
-                tag = text.render("stickers" if stick else "write  \u00b7  move", 24, (255, 255, 255), "script", 0.7)
+                tag = text.render("stickers" if stick else "write  \u00b7  move  \u00b7  filter", 24, (255, 255, 255), "script", 0.7)
                 if self.grabbed is not None and not stick and st.pinch == "grab":
                     tag = text.render("closer for bigger, farther for smaller", 24, (255, 255, 255), "script", 0.7)
                 if tag is not None:
@@ -647,7 +665,7 @@ class FogWindow:
         side = "right" if self.sticker_hand == "Right" else "left"
         line1 = (f"breathe to fog  \u00b7  fist to wipe  \u00b7  {side} hand: touch your thumb to a finger for a sticker"
                  "  \u00b7  N for more stickers")
-        line2 = "other hand: index writes in the fog  \u00b7  middle holds a sticker, closer to enlarge"
+        line2 = "other hand: index writes  \u00b7  middle holds a sticker (closer to enlarge)  \u00b7  ring changes your face filter"
         line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   N stickers   \u00b7   E filter   \u00b7   V camera   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
