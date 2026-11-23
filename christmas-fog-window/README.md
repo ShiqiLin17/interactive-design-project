@@ -44,13 +44,13 @@ The stickers in `my_stickers/` are Shiqi's own artwork.
 
 Your face gets a Douyin-style beauty filter all the time, plus a Christmas accessory you can switch.
 
-**Beauty (always on):**
-- Face shaping: slimmer jawline, slightly bigger eyes set a touch lower, narrower nose wings (鼻翼), lower hairline
-- Skin: airbrushed, brighter pinkish-fair tone, softened nasolabial folds (法令纹), automatic blemish and pimple removal
-- Makeup: champagne-pink glitter eyeshadow, brown winged liner with a white liner under it, inner-corner sparkle, high blush and a flush across the nose, freckles, little snowflake and gold and red star face stickers, nose-tip shimmer, glossy berry gradient lips
+**Beauty (always on), tuned to match Shiqi's favorite Douyin filter:**
+- Face shaping: soft V-line jaw and chin, slightly bigger eyes set a touch lower, narrower nose wings (鼻翼), lower hairline
+- Skin: airbrushed, a little brighter and less yellow, softened nasolabial folds (法令纹), automatic blemish and pimple removal
+- Natural makeup: pink blush on the cheeks, rosy lips, softly defined brows and lash line, brighter under-eyes
 
 **Accessories:** switch with **thumb + ring finger on your grab hand** (or press **E**):
-none → Santa hat → reindeer antlers + red nose → Christmas tree hat → garland crown with bells → fluffy earmuffs → floating pastel stars → mustache → snow in hair
+none (the default) → Santa hat → reindeer antlers + red nose → Christmas tree hat → garland crown with bells → fluffy earmuffs → floating pastel stars → mustache → snow in hair
 
 Everything follows your face as you move, and it sits under the fog like the rest of your reflection. The beauty settings are tuned for Shiqi's face (see the top of `facefx.py`).
 

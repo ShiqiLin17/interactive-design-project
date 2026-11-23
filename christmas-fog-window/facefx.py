@@ -1,10 +1,10 @@
 """Douyin-style beauty filter + Christmas face filters, all following MediaPipe's 478 face landmarks.
 
 Three layers, applied in this order:
-  1. Face shaping   - slimmer jaw, slightly bigger eyes set a touch lower, narrower nose wings, lower hairline
-  2. Beauty skin    - airbrushed, brighter, pinkish-fair skin, softer nasolabial folds (法令纹), blemish removal
-     + makeup       - champagne glitter shadow, brown wing + white liner, blush, freckles, snowflake/star
-                      face stickers, nose shimmer, glossy gradient lips
+  1. Face shaping   - V-line jaw and chin, slightly bigger eyes set a touch lower, narrower nose wings, lower hairline
+  2. Beauty skin    - airbrushed, brighter, slightly cooler (less yellow) skin, softer nasolabial folds (法令纹),
+                      blemish removal
+     + makeup       - natural: pink blush, rosy lips, softly defined brows and lash line, brighter under-eyes
   3. Accessories    - Santa hat, reindeer, tree hat, garland crown, earmuffs, stars, mustache, snowy hair
                       (switch with thumb + ring finger on the grab hand, or the E key)
 
@@ -15,17 +15,17 @@ import math
 import cv2
 import numpy as np
 
-# ------------------------------------------------------------------ settings (0 = off)
-FACE_SLIM = 0.07        # pull the jawline/cheeks inward
-EYE_ENLARGE = 0.12      # make the eyes a bit bigger
-EYE_LOWER = 0.012       # move the eyes down a little (fraction of face height)
-NOSE_SLIM = 0.22        # narrow the nose wings (鼻翼)
-HAIRLINE_LOWER = 0.045  # bring the hairline down (fraction of face height)
-SMOOTH = 0.85           # skin airbrushing
-BRIGHTEN = 14           # skin brightening
+# ------------------------------------------------------------------ settings (tuned to Shiqi's face, to match her Douyin filter)
+FACE_SLIM = 0.06        # V-line: pull the lower jawline inward
+CHIN_SLIM = 0.07        # slightly narrower chin
+EYE_ENLARGE = 0.08      # slightly bigger eyes
+EYE_LOWER = 0.01        # eyes a touch lower (fraction of face height)
+NOSE_SLIM = 0.22        # narrower nose wings (鼻翼)
+HAIRLINE_LOWER = 0.04   # lower hairline (fraction of face height)
+SMOOTH = 0.9            # skin airbrushing
 FOLDS = 0.8             # soften nasolabial folds (法令纹)
 BLEMISH = True          # remove small spots and pimples
-MAKEUP = True
+MAKEUP = True           # natural makeup: blush, lip tint, brows, lash line, brighter under-eyes
 
 # ------------------------------------------------------------------ landmarks
 FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
@@ -40,8 +40,11 @@ L_BROW = [70, 63, 105, 66, 107]
 R_BROW = [300, 293, 334, 296, 336]
 LIPS_OUT = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84, 181, 91, 146]
 LIPS_IN = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95]
-JAW_L = [132, 58, 172, 136, 150, 149, 176]
-JAW_R = [361, 288, 397, 365, 379, 378, 400]
+JAW_L = [172, 136, 150]
+JAW_R = [397, 365, 379]
+CHIN = [149, 176, 148, 152, 377, 400, 378]
+L_BROW_FULL = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46]
+R_BROW_FULL = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276]
 ALAE = [(64, 294), (129, 358), (98, 327)]
 
 ACCESSORIES = ["none", "santa hat", "reindeer", "tree hat", "garland crown", "earmuffs", "starry",
@@ -317,7 +320,7 @@ def make_mustache():
 class FaceFX:
     def __init__(self, seed=21):
         rng = np.random.default_rng(seed)
-        self.acc = 1                     # start with the Santa hat
+        self.acc = 0                     # start with just the beauty filter (no accessory)
         self.changed_at = -10.0
         self.makeup_on = MAKEUP
         self.shape_on = True
@@ -335,7 +338,9 @@ class FaceFX:
             "mustache": make_mustache(),
         }
         self.red_nose = _sphere_rgba(60, (35, 30, 210))
-        self.glitter = [(rng.random(), rng.random(), rng.uniform(0, 6.28)) for _ in range(60)]
+        x = np.arange(256, dtype=np.float32)
+        lift = lambda gain, add: np.clip(x * gain + add * (1 - x / 255) ** 0.5, 0, 255)
+        self.lut = np.stack([lift(1.04, 6), lift(1.05, 7), lift(1.03, 6)], axis=1).astype(np.uint8).reshape(256, 1, 3)
         self.freckles = [(int(rng.choice([197, 195, 5, 6, 117, 346, 50, 280, 119, 348])), rng.normal(0, 0.04),
                           rng.normal(0, 0.028), rng.uniform(0.0025, 0.0045)) for _ in range(46)]
         self.face_bits = [  # (landmark, dx, dy, kind, size) in face-width units
@@ -366,7 +371,8 @@ class FaceFX:
     # ---------------------------------------------------------- main entry
     def apply(self, frame, pts, now):
         if pts is None:
-            return frame
+            return cv2.LUT(frame, self.lut)
+        frame = cv2.LUT(frame, self.lut)          # whole picture: a little brighter and less yellow
         if self.shape_on:
             out, pts = self._reshape(frame, pts)
         else:
@@ -410,6 +416,10 @@ class FaceFX:
             for i in JAW_L + JAW_R:
                 side = np.dot(pts[i] - mid, right)
                 translate(pts[i], -right * side * FACE_SLIM, fw * 0.2)
+        if CHIN_SLIM:
+            for i in CHIN:
+                side = np.dot(pts[i] - mid, right)
+                translate(pts[i], -right * side * CHIN_SLIM + up * fh * 0.015 * CHIN_SLIM / 0.12, fw * 0.16)
         if NOSE_SLIM:
             for a, b in ALAE:
                 for i in (a, b):
@@ -426,7 +436,7 @@ class FaceFX:
         x1, y1 = np.minimum(pts[FACE_OVAL].max(axis=0) + fw * 0.35, [W, H]).astype(int)
         if x1 - x0 < 20 or y1 - y0 < 20:
             return frame.copy(), pts
-        q = 2  # compute the warp at half resolution (it's smooth), then scale it up
+        q = max(2, int(fw / 110))  # compute the warp at low resolution (it's smooth), then scale it up
         gw, gh = (x1 - x0) // q + 1, (y1 - y0) // q + 1
         X, Y = np.meshgrid(np.linspace(x0, x1 - 1, gw, dtype=np.float32),
                            np.linspace(y0, y1 - 1, gh, dtype=np.float32))
@@ -458,39 +468,42 @@ class FaceFX:
         return m
 
     def _skin(self, out, pts, fw):
-        x0, y0, x1, y1 = self._roi(out, pts, 8)
+        x0, y0, x1, y1 = self._roi(out, pts, int(fw * 0.2))   # room for the soft edge, so there's no seam
         if x1 - x0 < 20 or y1 - y0 < 20:
             return
         off = np.array([x0, y0])
         roi = out[y0:y1, x0:x1]
         mask_u8 = self._skin_mask(roi.shape[:2], pts, fw, off)
         rh, rw = roi.shape[:2]
-        small = cv2.resize(roi, (rw // 2, rh // 2), interpolation=cv2.INTER_AREA)
-        k = max(3, int(fw * 0.02) | 1)                               # neighbourhood size at half resolution
+        s = min(0.5, 220.0 / fw)                                     # work at a fixed size: face ~220 px wide
+        sw, sh = max(8, int(rw * s)), max(8, int(rh * s))
+        small = cv2.resize(roi, (sw, sh), interpolation=cv2.INTER_AREA)
+        fws = fw * s
+        k = max(3, int(fws * 0.04) | 1)
         if BLEMISH:   # small spots that are darker or redder than the skin around them
             g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
             red = cv2.subtract(small[..., 2], small[..., 1])
             g_bg = cv2.medianBlur(g, k)
             red_bg = cv2.medianBlur(red, k)
             spot = (cv2.subtract(g_bg, g) > 9) | (cv2.subtract(red, red_bg) > 8)
-            spot = spot & (cv2.resize(mask_u8, (rw // 2, rh // 2), interpolation=cv2.INTER_NEAREST) > 200)
+            spot = spot & (cv2.resize(mask_u8, (sw, sh), interpolation=cv2.INTER_NEAREST) > 200)
             spot = cv2.dilate(spot.astype(np.uint8), np.ones((3, 3), np.uint8))
             nn, ll, ss, _ = cv2.connectedComponentsWithStats(spot)
             if nn > 1:
                 big = np.zeros(nn, bool)
-                big[1:] = ss[1:, cv2.CC_STAT_AREA] > (fw * 0.015) ** 2  # only small spots, not features
+                big[1:] = ss[1:, cv2.CC_STAT_AREA] > (fws * 0.03) ** 2  # only small spots, not features
                 spot[big[ll]] = 0
                 if spot.any():
                     clean = cv2.resize(cv2.medianBlur(small, k), (rw, rh), interpolation=cv2.INTER_LINEAR)
                     sm = cv2.GaussianBlur(cv2.resize(spot.astype(np.float32), (rw, rh)), (0, 0), 1.5)[..., None]
                     roi[:] = (roi * (1 - sm) + clean * sm).astype(np.uint8)
-                    small = cv2.resize(roi, (rw // 2, rh // 2), interpolation=cv2.INTER_AREA)
+                    small = cv2.resize(roi, (sw, sh), interpolation=cv2.INTER_AREA)
         # airbrush (edge-preserving smoothing at half size), then brighten to a pinkish fair tone
         smooth = cv2.bilateralFilter(small, 9, 45, 9)
         smooth = cv2.bilateralFilter(smooth, 7, 30, 7)
         smooth = cv2.resize(smooth, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR).astype(np.float32)
-        smooth = smooth * np.float32([1.04, 1.05, 1.08]) + BRIGHTEN
-        m = cv2.resize(cv2.GaussianBlur(cv2.resize(mask_u8, (rw // 2, rh // 2)), (0, 0), max(1, fw * 0.015)),
+        smooth = smooth * np.float32([1.03, 1.03, 1.01]) + np.float32([5, 5, 5])
+        m = cv2.resize(cv2.GaussianBlur(cv2.resize(mask_u8, (sw, sh)), (0, 0), max(1, fws * 0.06)),
                        (rw, rh)).astype(np.float32) / 255 * SMOOTH
         if FOLDS:   # nasolabial folds: extra smoothing + lift from the nose wing down to the mouth corner
             fold = np.zeros(roi.shape[:2], np.float32)
@@ -501,7 +514,7 @@ class FaceFX:
                 b = pts[corner] - off + right * s * fw * 0.06 - up * fw * 0.02
                 cv2.line(fold, tuple(a.astype(int)), tuple(b.astype(int)), 1.0, max(3, int(fw * 0.07)), cv2.LINE_AA)
             fold = cv2.GaussianBlur(fold, (0, 0), max(1, fw * 0.03)) * FOLDS
-            very = cv2.resize(cv2.GaussianBlur(small, (0, 0), max(1, fw * 0.0125)), (rw, rh)).astype(np.float32) + 10
+            very = cv2.resize(cv2.GaussianBlur(small, (0, 0), max(1, fws * 0.025)), (rw, rh)).astype(np.float32) + 6
             smooth = smooth * (1 - fold[..., None]) + very * fold[..., None]
             m = np.maximum(m, fold * 0.9)
         roi[:] = np.clip(roi * (1 - m[..., None]) + smooth * m[..., None], 0, 255).astype(np.uint8)
@@ -542,78 +555,48 @@ class FaceFX:
         cv2.circle(out, (x, y), max(1, r // 3), col, -1, cv2.LINE_AA)
 
     def _makeup(self, out, pts, fw, now):
+        """Natural Douyin-style makeup: pink blush, rosy lips, softly defined brows and lash line, bright under-eyes."""
         up = _unit(pts[10] - pts[152])
         right = np.array([-up[1], up[0]])
         roll = math.atan2(right[1], right[0])
         H, W = out.shape[:2]
 
-        # blush: high on the cheeks, and a soft flush across the nose
-        for i, j in ((117, 50), (346, 280)):
-            self._soft_tint(out, pts[i] * 0.55 + pts[j] * 0.45, fw * 0.15, fw * 0.1, (0.82, 0.78, 1.06), 0.42, roll)
-        self._soft_tint(out, pts[197], fw * 0.08, fw * 0.045, (0.86, 0.82, 1.04), 0.3, roll)
+        # blush on the apples of the cheeks, a little toward the outside
+        for i, j, s in ((117, 50, -1), (346, 280, 1)):
+            c = pts[i] * 0.45 + pts[j] * 0.55 + right * s * fw * 0.03
+            self._soft_tint(out, c, fw * 0.14, fw * 0.1, (0.86, 0.8, 1.06), 0.5, roll)
 
-        # eyeshadow: champagne-pink wash on the lid + twinkling glitter
-        glitter = out.copy()
-        for upper in (L_UPPER, R_UPPER):
-            lid = pts[upper]
-            ew = np.linalg.norm(lid[0] - lid[-1]) + 1e-6
-            top = lid + up * ew * 0.42 * np.sin(np.linspace(0.2, math.pi - 0.2, len(lid)))[:, None]
-            poly = np.vstack([lid, top[::-1]]).astype(np.int32)
+        # brighter, smoother under-eyes
+        for lower in (L_LOWER, R_LOWER):
+            low = pts[lower]
+            ew = np.linalg.norm(low[0] - low[-1]) + 1e-6
+            self._soft_tint(out, low.mean(axis=0) - up * ew * 0.28, ew * 0.42, ew * 0.16, (1.08, 1.07, 1.05), 0.6, roll)
+
+        # brows: a bit darker and more even
+        for brow in (L_BROW_FULL, R_BROW_FULL):
+            poly = pts[brow].astype(np.int32)
             bx, by, bw, bh = cv2.boundingRect(poly)
-            pad = int(ew * 0.3) + 2
-            x0, y0 = max(bx - pad, 0), max(by - pad, 0)
-            x1, y1 = min(bx + bw + pad, W), min(by + bh + pad, H)
+            pad = 6
+            x0, y0, x1, y1 = max(bx - pad, 0), max(by - pad, 0), min(bx + bw + pad, W), min(by + bh + pad, H)
             if x1 <= x0 or y1 <= y0:
                 continue
             m = np.zeros((y1 - y0, x1 - x0), np.uint8)
             cv2.fillPoly(m, [poly - np.array([x0, y0])], 255, cv2.LINE_AA)
-            mm = cv2.GaussianBlur(m.astype(np.float32) / 255, (0, 0), ew * 0.08)[..., None] * 0.5
+            a = cv2.GaussianBlur(m.astype(np.float32) / 255, (0, 0), 2.0)[..., None] * 0.35
             roi = out[y0:y1, x0:x1].astype(np.float32)
-            shade = roi * np.float32([0.88, 0.86, 1.0]) + np.float32([10, 14, 22])
-            out[y0:y1, x0:x1] = np.clip(roi * (1 - mm) + shade * mm, 0, 255).astype(np.uint8)
-            for (u, v, ph) in self.glitter:
-                kk = int(u * (len(lid) - 1))
-                p = lid[kk] * (1 - v * 0.8) + top[kk] * v * 0.8
-                b = 0.5 + 0.5 * math.sin(now * 3 + ph)
-                if b > 0.35:
-                    cv2.circle(glitter, (int(p[0]), int(p[1])), 1, (int(200 + 55 * b), int(220 + 35 * b), 255), -1, cv2.LINE_AA)
-        cv2.addWeighted(glitter, 0.85, out, 0.15, 0, out)
+            out[y0:y1, x0:x1] = np.clip(roi * (1 - a) + roi * np.float32([0.7, 0.72, 0.76]) * a, 0, 255).astype(np.uint8)
 
-        # liner: brown tapered wing on the upper lid, thin white wing under it, sparkle at the inner corner
-        for upper, lower in ((L_UPPER, L_LOWER), (R_UPPER, R_LOWER)):
-            lid = pts[upper]
-            outer, inner = lid[0], lid[-1]
-            ew = np.linalg.norm(outer - inner) + 1e-6
-            out_dir = _unit(outer - inner)
-            wing = outer + out_dir * ew * 0.28 + up * ew * 0.16
-            line = list(lid[:5][::-1]) + [outer, wing]
-            for i, (p, q) in enumerate(zip(line, line[1:])):
-                th = max(1, int(ew * (0.035 + 0.02 * i / len(line))))
-                cv2.line(out, tuple(p.astype(int)), tuple(q.astype(int)), (40, 40, 70), th, cv2.LINE_AA)
-            low = pts[lower]
-            w0 = low[2] * 0.5 + outer * 0.5 - up * ew * 0.03
-            w1 = outer + out_dir * ew * 0.25 + up * ew * 0.06
-            cv2.line(out, tuple(w0.astype(int)), tuple(w1.astype(int)), (250, 248, 252), 1, cv2.LINE_AA)
-            self._glow_spot(out, inner + out_dir * ew * 0.08 - up * ew * 0.08, ew * 0.08, 0.35, (255, 245, 240))
-            for k in range(3):
-                if math.sin(now * 2.5 + k * 1.7 + float(outer[0])) > 0.2:
-                    self._sparkle(out, low[5 + k % 3] - up * ew * 0.12, ew * 0.05, (230, 245, 255))
-
-        # freckles
+        # lash line: a soft, thin darkening along the upper lid (no wing)
         layer = out.copy()
-        for i, dx, dy, r in self.freckles:
-            p = pts[i] + right * dx * fw - up * dy * fw
-            x, y = int(np.clip(p[0], 0, W - 1)), int(np.clip(p[1], 0, H - 1))
-            c = out[y, x].astype(np.float32) * np.float32([0.68, 0.7, 0.8])
-            cv2.circle(layer, (x, y), max(1, int(r * fw)), tuple(int(v) for v in c), -1, cv2.LINE_AA)
-        cv2.addWeighted(layer, 0.6, out, 0.4, 0, out)
+        for upper in (L_UPPER, R_UPPER):
+            lid = pts[upper].astype(np.int32)
+            ew = np.linalg.norm(pts[upper][0] - pts[upper][-1]) + 1e-6
+            cv2.polylines(layer, [lid], False, (35, 30, 35), max(1, int(ew * 0.045)), cv2.LINE_AA)
+        x0, y0, x1, y1 = self._roi(out, pts, 0)
+        soft = cv2.GaussianBlur(layer[y0:y1, x0:x1], (0, 0), 0.8)
+        out[y0:y1, x0:x1] = cv2.addWeighted(soft, 0.45, out[y0:y1, x0:x1], 0.55, 0)
 
-        # nose-tip shimmer
-        self._glow_spot(out, pts[4] - up * fw * 0.015, fw * 0.035, 0.35)
-        if math.sin(now * 1.9) > 0:
-            self._sparkle(out, pts[4] - up * fw * 0.02, fw * 0.015)
-
-        # glossy gradient lips: berry in the middle, rosy at the edges, shine on the lower lip
+        # rosy lip tint, a little deeper toward the middle, soft sheen on the lower lip
         bx, by, bw, bh = cv2.boundingRect(pts[LIPS_OUT].astype(np.int32))
         pad = int(fw * 0.05) + 2
         x0, y0 = max(bx - pad, 0), max(by - pad, 0)
@@ -624,28 +607,13 @@ class FaceFX:
             mi = np.zeros_like(mo)
             cv2.fillPoly(mo, [(pts[LIPS_OUT] - off).astype(np.int32)], 255, cv2.LINE_AA)
             cv2.fillPoly(mi, [(pts[LIPS_IN] - off).astype(np.int32)], 255, cv2.LINE_AA)
-            lips = cv2.GaussianBlur(cv2.subtract(mo, mi).astype(np.float32) / 255, (0, 0), 1.2)[..., None]
+            lips = cv2.GaussianBlur(cv2.subtract(mo, mi).astype(np.float32) / 255, (0, 0), 1.5)[..., None]
             depth = cv2.GaussianBlur(cv2.dilate(mi, np.ones((5, 5), np.uint8)).astype(np.float32) / 255,
                                      (0, 0), max(1, fw * 0.03))[..., None]
             roi = out[y0:y1, x0:x1].astype(np.float32)
-            tint = roi * np.float32([0.75, 0.72, 1.08]) * (1 - depth) + roi * np.float32([0.5, 0.45, 0.95]) * depth
-            out[y0:y1, x0:x1] = np.clip(roi * (1 - lips * 0.75) + tint * lips * 0.75, 0, 255).astype(np.uint8)
-            self._glow_spot(out, pts[14] * 0.45 + pts[17] * 0.55, fw * 0.03, 0.45)
-            self._glow_spot(out, pts[0] * 0.6 + pts[13] * 0.4 + right * fw * 0.03, fw * 0.012, 0.35)
-
-        # little face stickers: snowflakes, gold and red stars
-        for i, dx, dy, kind, sz in self.face_bits:
-            p = pts[i] + right * dx * fw - up * dy * fw
-            r = sz * fw
-            if kind == "flake":
-                for a in range(6):
-                    ang = roll + a * math.pi / 3
-                    q = p + np.array([math.cos(ang), math.sin(ang)]) * r
-                    cv2.line(out, tuple(p.astype(int)), tuple(q.astype(int)), (252, 250, 250), max(1, int(r * 0.22)), cv2.LINE_AA)
-                cv2.circle(out, tuple(p.astype(int)), max(1, int(r * 0.25)), (255, 255, 255), -1, cv2.LINE_AA)
-            else:
-                col = {"gold": (70, 185, 230), "red": (50, 40, 200), "white": (250, 250, 252)}[kind]
-                cv2.fillPoly(out, [_star_pts(p, r, r * 0.32, n=4, rot=roll)], col, cv2.LINE_AA)
+            tint = roi * np.float32([0.86, 0.8, 1.08]) * (1 - depth) + roi * np.float32([0.74, 0.68, 1.04]) * depth
+            out[y0:y1, x0:x1] = np.clip(roi * (1 - lips * 0.6) + tint * lips * 0.6, 0, 255).astype(np.uint8)
+            self._glow_spot(out, pts[14] * 0.45 + pts[17] * 0.55, fw * 0.025, 0.18)
 
     # ---------------------------------------------------------- 3. accessories
     def _accessory(self, out, pts, fw, now):
