@@ -35,16 +35,23 @@ class Droplets:
         self.w, self.h = w, h
         rng = np.random.default_rng(seed)
         self.rnd = random.Random(seed)
-        count = count or int(w * h / 260)
+        count = count or int(w * h / 900)
 
         height = np.zeros((h, w), np.float32)
         alpha = np.zeros((h, w), np.float32)
         mx, my = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
         map_x, map_y = mx.copy(), my.copy()
 
-        for _ in range(count):
+        placed = 0
+        while placed < count:
             y = h * rng.beta(1.7, 1.1)                  # more (and bigger) drops lower on the glass
             x = rng.uniform(0, w)
+            # only near the corners: 0 in the middle of the glass, 1 in the corners
+            cr = math.hypot((x - w / 2) / (w / 2), (y - h / 2) / (h / 2)) / math.sqrt(2)
+            keep = min(1.0, max(0.0, (cr - 0.55) / 0.35)) ** 1.5
+            if rng.random() > keep:
+                continue
+            placed += 1
             r = float(np.clip(rng.lognormal(math.log(0.55 + 1.5 * y / h), 0.5), 0.45, 6.5))
             rx, ry = r * rng.uniform(0.85, 1.05), r * rng.uniform(1.0, 1.3)
             cy = y
@@ -78,9 +85,11 @@ class Droplets:
     # ---------------------------------------------------------------- sliding drops
     def update_runners(self, fog, glass, dt):
         x1, y1, x2, y2 = glass
-        if len(self.runners) < 7 and fog.coverage() > 0.25 and self.rnd.random() < dt * 0.9:
-            x = self.rnd.uniform(x1 + 20, x2 - 20)
-            y = self.rnd.uniform(y1 + 20, y1 + (y2 - y1) * 0.6)
+        if len(self.runners) < 3 and fog.coverage() > 0.25 and self.rnd.random() < dt * 0.9:
+            side = self.rnd.choice((0, 1))                      # slide down near the left or right edge
+            band = (x2 - x1) * 0.12
+            x = self.rnd.uniform(x1 + 20, x1 + band) if side == 0 else self.rnd.uniform(x2 - band, x2 - 20)
+            y = self.rnd.uniform(y1 + 20, y1 + (y2 - y1) * 0.35)
             if fog.value_at(x, y) > 0.6:
                 self.runners.append({"x": x, "y": y, "r": self.rnd.uniform(2.5, 4.2), "v": 0.0,
                                      "stop": self.rnd.uniform(y + 80, y2 + 40), "ph": self.rnd.uniform(0, 6)})

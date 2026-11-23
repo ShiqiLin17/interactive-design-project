@@ -673,9 +673,9 @@ class FogWindow:
             return
         gx1, gy1, gx2, gy2 = self.window.glass
         side = "right" if self.sticker_hand == "Right" else "left"
-        line1 = (f"breathe to fog  \u00b7  {side} hand: fist to wipe, touch your thumb to a finger for a sticker"
-                 "  \u00b7  N for more stickers")
-        line2 = "other hand: point your index finger to write  \u00b7  middle holds a sticker (closer to enlarge)  \u00b7  ring changes your face filter"
+        line1 = (f"breathe to fog  \u00b7  {side} hand: fist to wipe, thumb to a finger for a sticker"
+                 "  \u00b7  N for more")
+        line2 = "other hand: point to write  \u00b7  thumb + middle moves a sticker (closer = bigger)  \u00b7  thumb + ring: face filter"
         line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   N stickers   \u00b7   E filter   \u00b7   V camera   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
