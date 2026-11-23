@@ -37,7 +37,7 @@ Have a sticker *sheet* on a white background instead? Cut it into separate stick
 python cut_stickers.py path/to/sheet.jpg
 ```
 
-`my_stickers/` is kept out of git, so artwork you don't own never gets uploaded to GitHub.
+The stickers in `my_stickers/` are Shiqi's own artwork.
 
 ## Face filters
 
