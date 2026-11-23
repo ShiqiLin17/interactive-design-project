@@ -32,7 +32,7 @@ MODES = [
 class FaceFX:
     def __init__(self, seed=21):
         rng = np.random.default_rng(seed)
-        self.mode = 1
+        self.mode = 2      # start on rosy cheeks (soft glow + blush)
         self.changed_at = -10.0
         # face-relative random positions (in units of face width) so details stick to the face
         self.lash_bits = [(i, rng.normal(0, 0.012), -abs(rng.normal(0.01, 0.01)), rng.uniform(0.003, 0.007))
@@ -96,16 +96,16 @@ class FaceFX:
             return
         roi = out[y0:y1, x0:x1]
         small = cv2.resize(roi, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
-        smooth = cv2.bilateralFilter(small, 7, 28, 7)
+        smooth = cv2.bilateralFilter(small, 9, 38, 9)
         smooth = cv2.resize(smooth, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR).astype(np.float32)
-        smooth = smooth * np.float32([1.02, 1.04, 1.07]) + 6
-        m = self._skin_mask((y1 - y0, x1 - x0), pts, fw, x0, y0)[..., None] * 0.65
+        smooth = smooth * np.float32([1.03, 1.06, 1.1]) + 12
+        m = self._skin_mask((y1 - y0, x1 - x0), pts, fw, x0, y0)[..., None] * 0.85
         out[y0:y1, x0:x1] = np.clip(roi * (1 - m) + smooth * m, 0, 255).astype(np.uint8)
 
     def _rosy(self, out, pts, fw):
         """Soft cold-weather blush on the cheeks and a touch on the nose tip."""
         H, W = out.shape[:2]
-        for idx, r, k in ((CHEEKS[0], 0.17, 0.22), (CHEEKS[1], 0.17, 0.22), (4, 0.07, 0.12)):
+        for idx, r, k in ((CHEEKS[0], 0.18, 0.4), (CHEEKS[1], 0.18, 0.4), (4, 0.07, 0.22)):
             c = pts[idx]
             R = int(fw * r * 2.6)
             x0, y0 = int(max(c[0] - R, 0)), int(max(c[1] - R, 0))
@@ -115,7 +115,7 @@ class FaceFX:
             yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
             a = np.exp(-(((xx - c[0]) / (fw * r)) ** 2 + ((yy - c[1]) / (fw * r * 0.75)) ** 2)) * k
             roi = out[y0:y1, x0:x1].astype(np.float32)
-            tint = roi * np.float32([0.82, 0.78, 1.05])            # deepen toward rose
+            tint = roi * np.float32([0.78, 0.72, 1.08])            # deepen toward rose
             out[y0:y1, x0:x1] = np.clip(roi * (1 - a[..., None]) + tint * a[..., None], 0, 255).astype(np.uint8)
 
     def _crystal(self, img, p, r, bright=1.0):

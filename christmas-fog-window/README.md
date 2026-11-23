@@ -25,7 +25,7 @@ The ornament hand is your **right** hand by default. Press **S** to swap. Both h
 
 Tip: after you draw, fist-wiping pauses for a moment so moving your hand between letters doesn't erase them.
 
-**Keys:** `N` next page of stickers · `E` switch face filter · `S` swap hands · `R` fog the whole window · `W` clear all fog · `Z` undo · `C` clear stickers · `P` save a photo · `H` show help again (it fades after a few seconds) · `F` fullscreen · `Q` quit
+**Keys:** `V` switch camera (laptop / iPhone) · `N` next page of stickers · `E` switch face filter · `S` swap hands · `R` fog the whole window · `W` clear all fog · `Z` undo · `C` clear stickers · `P` save a photo · `H` show help again (it fades after a few seconds) · `F` fullscreen · `Q` quit
 
 ## Your own stickers
 
@@ -44,8 +44,8 @@ The stickers in `my_stickers/` are Shiqi's own artwork.
 Press **E** to switch between subtle winter filters. They follow your face as you move, and they sit under the fog like everything else:
 
 - **natural**: no filter
-- **soft glow** (the default): slightly smoother, brighter, warmer skin. Eyes, brows and lips stay sharp.
-- **rosy cheeks**: a soft cold-weather blush on your cheeks and the tip of your nose
+- **soft glow**: slightly smoother, brighter, warmer skin. Eyes, brows and lips stay sharp.
+- **rosy cheeks** (the default): soft glow plus a cold-weather blush on your cheeks and the tip of your nose
 - **frosted lashes**: tiny ice crystals on your lashes and brows
 - **snow in hair**: twinkling snowflakes resting along your hairline
 - **freckles**: soft freckles across your nose and cheeks, with a little shimmer
@@ -66,7 +66,7 @@ The first run downloads two small MediaPipe models (hand + face tracking) into t
 ## Troubleshooting
 
 - **Black screen or "Couldn't open the camera" on Mac:** go to System Settings → Privacy & Security → Camera and turn on access for Terminal (or VS Code). Then restart Terminal.
-- **Wrong camera:** change `CAMERA_INDEX = 0` to `1` at the top of `main.py`.
+- **Wrong camera (e.g. it uses your iPhone):** press **V** in the app to switch cameras, or start it with `python main.py 1`. To stop your Mac from picking the iPhone at all: on the iPhone, go to Settings → General → AirPlay & Continuity and turn off Continuity Camera.
 - **`pip` can't find mediapipe:** your Python version is probably too new. Use Python 3.10–3.12, for example `python3.12 -m venv .venv`.
 - **Fog triggers when you're just talking:** raise `MOUTH_OPEN` at the top of `main.py` (try `0.07`).
 - **Want the fog to slowly come back after wiping:** set `FOG_REGROW_SECONDS = 25`.

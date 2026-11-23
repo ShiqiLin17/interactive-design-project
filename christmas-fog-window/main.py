@@ -6,7 +6,7 @@ Sticker hand:  touch your thumb to a finger to pop out a sticker
 Other hand:    thumb + index writes in the fog; thumb + middle grabs a sticker (closer = bigger)
 Either hand:   close your hand into a fist and wipe with the pinky side
 
-Keys: E face filter · S swap hands · R fog all · W wipe all · H help · Z undo · C clear stickers · P screenshot · F fullscreen · Q quit
+Keys: V switch camera · E face filter · S swap hands · R fog all · W wipe all · H help · Z undo · C clear stickers · P screenshot · F fullscreen · Q quit
 """
 import math
 import os
@@ -26,7 +26,7 @@ from facefx import FaceFX
 import text
 
 # ---------------------------------------------------------------- settings
-CAMERA_INDEX = 0
+CAMERA_INDEX = 0             # which camera to use (press V in the app to switch, or run: python main.py 1)
 WIDTH, HEIGHT = 1280, 720
 FOG_REGROW_SECONDS = 0       # 0 = fog only comes from your breath; e.g. 25 = slowly fogs back up
 BREATH_FOG_SECONDS = 1.8     # how long you blow to fog up the whole mirror
@@ -648,13 +648,20 @@ class FogWindow:
         line1 = (f"breathe to fog  \u00b7  fist to wipe  \u00b7  {side} hand: touch your thumb to a finger for a sticker"
                  "  \u00b7  N for more stickers")
         line2 = "other hand: index writes in the fog  \u00b7  middle holds a sticker, closer to enlarge"
-        line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   N stickers   \u00b7   E filter   \u00b7   H hide   \u00b7   Q quit"
+        line3 = "S swap hands   \u00b7   R fog   \u00b7   W clear   \u00b7   Z undo   \u00b7   C clear all   \u00b7   P photo   \u00b7   N stickers   \u00b7   E filter   \u00b7   V camera   \u00b7   H hide   \u00b7   Q quit"
         y = self.h - 74
         for i, line in enumerate((line1, line2, line3)):
             img = text.render(line, 21 if i < 2 else 17, (255, 248, 238) if i < 2 else (235, 225, 210),
                               "script" if i < 2 else "sans", 0.9)
             if img is not None:
                 paste(out, img, self.w // 2, y + i * 25, opacity=fade)
+
+
+def open_camera(index):
+    cap = cv2.VideoCapture(index)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+    return cap
 
 
 # ---------------------------------------------------------------- main loop
@@ -680,9 +687,8 @@ def main():
     )
     landmarker = vision.HandLandmarker.create_from_options(options)
 
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+    cam_index = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else CAMERA_INDEX
+    cap = open_camera(cam_index)
     ok, frame = cap.read()
     if not ok:
         print("Couldn't open the camera. On a Mac, allow camera access for Terminal in "
@@ -690,6 +696,8 @@ def main():
         sys.exit(1)
     h, w = frame.shape[:2]
     app = FogWindow(w, h)
+    app.facefx.changed_at = time.time() + 1.5   # show the face filter name for a moment at startup
+    cam_label_at = time.time()
 
     win = "Christmas Fog Window"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
@@ -702,6 +710,8 @@ def main():
         ok, frame = cap.read()
         if not ok:
             break
+        if frame.shape[:2] != (h, w):
+            frame = cv2.resize(frame, (w, h))
         frame = cv2.flip(frame, 1)  # mirror
         now = time.time()
         dt = min(now - last, 0.1)
@@ -734,6 +744,10 @@ def main():
 
         app.update(hands, face, now, dt)
         out = app.draw(frame, hands, now, dt)
+        if time.time() - cam_label_at < 2.5:
+            tag = text.render(f"camera {cam_index}   \u00b7   press V to switch", 22, (255, 250, 242), "script", 0.8)
+            if tag is not None:
+                paste(out, tag, w // 2, 30)
         cv2.imshow(win, out)
 
         key = cv2.waitKey(1) & 0xFF
@@ -756,6 +770,18 @@ def main():
             path = os.path.join("screenshots", time.strftime("christmas-fog-window-%Y%m%d-%H%M%S.png"))
             cv2.imwrite(path, out)
             print("Saved", path)
+        elif key == ord("v"):                     # switch to the next camera (e.g. laptop vs iPhone)
+            for step_i in range(1, 5):
+                nxt = (cam_index + step_i) % 5
+                c2 = open_camera(nxt)
+                ok2, _ = c2.read()
+                if ok2:
+                    cap.release()
+                    cap, cam_index = c2, nxt
+                    cam_label_at = time.time()
+                    print(f"Using camera {cam_index}")
+                    break
+                c2.release()
         elif key == ord("n"):
             app.next_page(now)
         elif key == ord("e"):
