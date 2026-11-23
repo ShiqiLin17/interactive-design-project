@@ -20,7 +20,7 @@ A Korean-style personal color draping test you can do at home with your webcam. 
 
 If you want to retake a color, touch that finger again before the 4th photo.
 
-**Keys:** `1`–`8` pick a type · `1`–`4` try a color · `SPACE` start over · `P` save the screen · `F` fullscreen · `Q` quit
+**Keys:** `V` switch camera (remembered) · `1`–`8` pick a type · `1`–`4` try a color · `SPACE` start over · `P` save the screen · `F` fullscreen · `Q` quit
 
 ## The 8 color types
 

@@ -6,7 +6,7 @@
 3. After all 4 colors, the photos are shown side by side so you can compare.
 SPACE = start over and pick another type.
 
-Keys: 1-8 pick a type · 1-4 test a color · SPACE restart · P save screen · F fullscreen · Q quit
+Keys: 1-8 pick a type · 1-4 test a color · SPACE restart · V switch camera · P save screen · F fullscreen · Q quit
 """
 import os
 import ssl
@@ -21,7 +21,7 @@ import text
 from palettes import PALETTES, bgr
 
 # ---------------------------------------------------------------- settings
-CAMERA_INDEX = 0
+CAMERA_INDEX = None          # None = remember your last choice (press V to switch), or prefer the laptop camera
 WIDTH, HEIGHT = 1280, 720
 HOLD_TO_PICK = 1.0          # seconds pointing at a card to choose it
 DRAPE_BEFORE_PHOTO = 1.1    # seconds the color shows on you before the photo
@@ -451,6 +451,46 @@ def rounded_rect_mask(m, r):
         cv2.circle(m, (cx, cy), r, 255, -1, cv2.LINE_AA)
 
 
+CAMERA_FILE = os.path.join(HERE, ".camera")
+
+
+def save_camera(index):
+    try:
+        with open(CAMERA_FILE, "w") as f:
+            f.write(str(index))
+    except OSError:
+        pass
+
+
+def pick_camera():
+    """Your last choice; otherwise, on a Mac, the built-in FaceTime camera (not the iPhone)."""
+    try:
+        with open(CAMERA_FILE) as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        pass
+    if sys.platform == "darwin":
+        try:
+            import json
+            import subprocess
+            info = subprocess.run(["system_profiler", "SPCameraDataType", "-json"], capture_output=True,
+                                  text=True, timeout=8).stdout
+            names = [c.get("_name", "") for c in json.loads(info).get("SPCameraDataType", [])]
+            for i, name in enumerate(names):
+                if any(k in name.lower() for k in ("facetime", "built-in", "macbook")):
+                    return i
+        except Exception:
+            pass
+    return 0
+
+
+def open_camera(index):
+    cap = cv2.VideoCapture(index)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+    return cap
+
+
 # ---------------------------------------------------------------- main loop
 def main():
     import mediapipe as mp
@@ -466,9 +506,13 @@ def main():
         base_options=mp_python.BaseOptions(model_asset_path=face_model),
         running_mode=vision.RunningMode.VIDEO, num_faces=1))
 
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        cam_index = int(sys.argv[1])
+    elif CAMERA_INDEX is not None:
+        cam_index = CAMERA_INDEX
+    else:
+        cam_index = pick_camera()
+    cap = open_camera(cam_index)
     ok, frame = cap.read()
     if not ok:
         print("Couldn't open the camera. On a Mac, allow camera access for Terminal in "
@@ -518,6 +562,17 @@ def main():
                 app.choose(n, now)
             elif app.mode == "test" and n < 4:
                 app.try_color(n, now)
+        elif key == ord("v"):                     # switch camera (e.g. laptop vs iPhone); remembered
+            for step_i in range(1, 5):
+                nxt = (cam_index + step_i) % 5
+                c2 = open_camera(nxt)
+                if c2.read()[0]:
+                    cap.release()
+                    cap, cam_index = c2, nxt
+                    save_camera(cam_index)
+                    print(f"Using camera {cam_index} (remembered for next time)")
+                    break
+                c2.release()
         elif key == ord("p"):
             os.makedirs(os.path.join(HERE, "results"), exist_ok=True)
             path = os.path.join(HERE, "results", time.strftime("screen-%Y%m%d-%H%M%S.png"))
