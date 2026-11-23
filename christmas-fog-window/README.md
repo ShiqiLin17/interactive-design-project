@@ -50,7 +50,7 @@ Your face gets a Douyin-style beauty filter all the time, plus a Christmas acces
 - Makeup: learned from her video. `my_makeup.png` stores how her Douyin filter changes the color at every spot of her face (blush gradient, lip tint, aegyo-sal (卧蚕) highlight, brightening, soft shading), and the app maps it onto her live face.
 
 **Accessories:** switch with **thumb + ring finger on your grab hand** (or press **E**):
-none (the default) → Santa hat → reindeer antlers + red nose → Christmas tree hat → garland crown with bells → floating pastel stars → mustache → snow in hair
+none (the default) → Santa hat → reindeer antlers + red nose → Christmas tree hat → garland crown with bells → floating pastel stars → snow in hair
 
 Everything follows your face as you move, and it sits under the fog like the rest of your reflection. The beauty settings are tuned for Shiqi's face (see the top of `facefx.py`).
 
